@@ -2,6 +2,7 @@
 using System.Text;
 using Nostradamus;
 
+Console.OutputEncoding = System.Text.Encoding.UTF8;
 var watch = System.Diagnostics.Stopwatch.StartNew();
 Console.WriteLine("** Nostradamus **");
 // var cabMap0 = new Dictionary<string,string>();

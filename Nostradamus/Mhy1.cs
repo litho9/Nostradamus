@@ -7,46 +7,16 @@ namespace Nostradamus;
 
 public static class Mhy1 {
     static void ExtractCabNames(string dir, string outName, Dictionary<string, string> cabMap) {
-        // using var writer = new StreamWriter(outName);
-        // writer.WriteLine("{");
-        var d = new DirectoryInfo(dir);
-        var files = d.GetFiles("*.blk");
+        var files = new DirectoryInfo(dir).GetFiles("*.blk");
         foreach (var file in files) {
             var reader = new BinaryReader(File.Open(file.FullName, FileMode.Open, FileAccess.Read));
             while (reader.BaseStream.Position < reader.BaseStream.Length) {
                 var (nodes, blocks) = CabsFromBlocks(reader);
-                foreach (var n in nodes) {
-                    // if (n.Path == "CAB-40587ae403cb2c9f487be1d7a74f3c21") Console.WriteLine("Found it");
+                foreach (var n in nodes)
                     cabMap.TryAdd(n.Path, file.FullName);
-                    // writer.WriteLine($"\t\"{n.Path}\":\"{file.Name}\",");
-                }
                 reader.BaseStream.Position += blocks.Sum(x => x.CompressedSize);
             }
         }
-        // writer.WriteLine("}");
-    }
-
-    public static Cab LoadCab(string file, string cabName) {
-        var reader = new BinaryReader(File.Open(file, FileMode.Open, FileAccess.Read));
-        while (reader.BaseStream.Position < reader.BaseStream.Length) {
-            var (nodes, blocks) = CabsFromBlocks(reader);
-            if (nodes.Count == 0) {
-                Console.WriteLine($"[MHY1] skipping block {reader.BaseStream.Position:x8}.");
-                reader.BaseStream.Position += blocks.Sum(x => x.CompressedSize);
-                continue;
-            }
-            var node = nodes.Find(n => n.Path == cabName);
-            if (node == null) {
-                reader.BaseStream.Position += blocks.Sum(x => x.CompressedSize);
-                continue;
-            }
-
-            var stream = GetStream(reader, blocks);
-            Console.WriteLine($"[LoadCab] Processing {node.Path} in {file.Split("\\").Last()}[{reader.BaseStream.Position:x8}].");
-            stream.Position = node.Offset;
-            return new Cab(stream);
-        }
-        throw new InvalidDataException();
     }
 
     public static void FindCabName(string file, long[] pathIds) {
@@ -61,7 +31,7 @@ public static class Mhy1 {
 
             var stream = GetStream(reader, blocks);
             foreach (var node in nodes) {
-                // if (node.Path != "CAB-aa6d8d733f6e9eb4ed21e616760746f8") continue; // TODO TEST!!!
+                if (node.Path != "CAB-0aa2768ea164a0d7db932b50052974af") continue; // TODO TEST!!!
                 Console.WriteLine($"[MHY1] Processing {node.Path} in {file.Split("\\").Last()}[{reader.BaseStream.Position:x8}].");
                 stream.Position = node.Offset;
                 if (node.Path.EndsWith("resS")) {
@@ -69,32 +39,18 @@ public static class Mhy1 {
                     continue;
                 }
                 var cab = new Cab(stream);
-                foreach (var (pathId, objInfo) in cab.Objects) {
-                    var obj = cab.ReadObject(cab.Objects[pathId]);
-                    Console.WriteLine($"{pathId:x16} {obj}");
-                    if (obj is Transform tt && tt.Father.PathId == 0) {
-                        Console.WriteLine("I am root!");
-                        break;
-                    }
-                }
-                // foreach (var pathId in pathIds)
-                //     if (cab.Objects.ContainsKey(pathId)) {
-                //         Console.WriteLine($"{pathId} found in {node.Path}");
-                //         var readObject = cab.ReadObject(cab.Objects[pathId]);
-                //         Console.WriteLine($"{readObject}");
-                //     }
             }
         }
     }
 
-    static T Point<T>(PPtr<T> pPtr, Cab cab, Dictionary<string, string> cabMap) {
-        if (pPtr.FileId == 0) return (T)cab.ReadObject(cab.Objects[pPtr.PathId]);
-        var extCabName = cab.Externals[pPtr.FileId - 1];
-        var blkName = cabMap[extCabName];
-        var cab2 = LoadCab(blkName, extCabName);
-        // cache.Add(extCabName, cab2);
-        return (T)cab2.ReadObject(cab2.Objects[pPtr.PathId]);
-    }
+    // static T Point<T>(PPtr<T> pPtr, Cab cab, Dictionary<string, string> cabMap) {
+    //     if (pPtr.FileId == 0) return (T)Cab.ReadObject(cab.Objects[pPtr.PathId]);
+    //     var extCabName = cab.Externals[pPtr.FileId - 1];
+    //     var blkName = cabMap[extCabName];
+    //     var cab2 = LoadCab(blkName, extCabName);
+    //     // cache.Add(extCabName, cab2);
+    //     return (T)Cab.ReadObject(cab2.Objects[pPtr.PathId]);
+    // }
 
     private static (List<DirNode>, List<StorageBlock>) CabsFromBlocks(BinaryReader reader) {
         if (!reader.ReadBytes(4).SequenceEqual("mhy1"u8.ToArray())) {
@@ -108,16 +64,10 @@ public static class Mhy1 {
         OodleLZ(compressed.AsSpan(48+7), block.AsSpan(0, size));
 
         using var r = new BinaryReader(new MemoryStream(block, 0, size));
-        var dirInfo = Range(0, ReadInt(r)).Select(_ => new DirNode(
-            ReadString(r),
-            r.ReadBoolean(),
-            ReadInt(r),
-            ReadUInt(r))
-        ).ToList();
-        var blockInfo = Range(0, ReadInt(r)).Select(_ => new StorageBlock(
-            ReadInt(r),
-            ReadUInt(r)
-        )).ToList();
+        var dirInfo = Range(0, ReadInt(r)).Select(_ =>
+            new DirNode(ReadString(r), r.ReadBoolean(), ReadInt(r), ReadUInt(r))).ToList();
+        var blockInfo = Range(0, ReadInt(r)).Select(_ =>
+            new StorageBlock(ReadInt(r), ReadUInt(r))).ToList();
         ArrayPool<byte>.Shared.Return(block);
         return (dirInfo, blockInfo);
     }
@@ -128,16 +78,12 @@ public static class Mhy1 {
             var compressedBytes = ArrayPool<byte>.Shared.Rent(compressedSize);
             var uncompressedBytes = ArrayPool<byte>.Shared.Rent(uncompressedSize);
             if (reader.Read(compressedBytes, 0, compressedSize) == 0) throw new Exception("Readn't");
-            try {
-                var cSpan = compressedBytes.AsSpan(0, compressedSize);
-                Descramble(cSpan, Math.Min(compressedSize, 128), 8);
-                var offset = 28;
-                OodleLZ(cSpan.Slice(offset, compressedSize - offset), uncompressedBytes);
-                blocksStream.Write(uncompressedBytes);
-            } finally {
-                ArrayPool<byte>.Shared.Return(compressedBytes);
-                ArrayPool<byte>.Shared.Return(uncompressedBytes);
-            }
+            var cSpan = compressedBytes.AsSpan(0, compressedSize);
+            Descramble(cSpan, Math.Min(compressedSize, 128), 8);
+            OodleLZ(cSpan.Slice(28, compressedSize - 28), uncompressedBytes); // offset=28
+            blocksStream.Write(uncompressedBytes);
+            ArrayPool<byte>.Shared.Return(compressedBytes);
+            ArrayPool<byte>.Shared.Return(uncompressedBytes);
         }
         return blocksStream;
     }
