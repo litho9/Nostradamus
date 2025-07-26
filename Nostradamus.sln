@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nostradamus", "Nostradamus\Nostradamus.csproj", "{AA04F3FE-3E2C-45A8-9F11-A42CDAAE0A36}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AA04F3FE-3E2C-45A8-9F11-A42CDAAE0A36}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA04F3FE-3E2C-45A8-9F11-A42CDAAE0A36}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA04F3FE-3E2C-45A8-9F11-A42CDAAE0A36}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA04F3FE-3E2C-45A8-9F11-A42CDAAE0A36}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
