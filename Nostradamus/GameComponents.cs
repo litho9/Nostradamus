@@ -41,7 +41,7 @@ public class PackedIntVector {
     }
 }
 
-public record Animator {
+public record Animator: GameComponent {
     public PPtr<GameObject> GameObject;
     public bool Enabled;
     public PPtr<Avatar> AvatarPtr;
@@ -73,11 +73,11 @@ public record Animator {
     }
 }
 
-public class Node(ObjectReader reader) {
+public record Node(ObjectReader reader) {
     public int ParentId = reader.ReadInt32();
     public int AxesId = reader.ReadInt32();
 }
-public class Axes(ObjectReader r) {
+public record Axes(ObjectReader r) {
     public Vector4 PreQ = r.ReadVector4();
     public Vector4 PostQ = r.ReadVector4();
     public Vector3 Sgn = r.ReadVector3();
@@ -86,13 +86,13 @@ public class Axes(ObjectReader r) {
     public float Length = r.ReadSingle();
     public uint Type = r.ReadUInt32();
 }
-public class Skeleton(ObjectReader reader) {
+public record Skeleton(ObjectReader reader) {
     public List<Node> Node = reader.ReadList(_ => new Node(reader));
     public uint[] Id = reader.ReadArray(_ => reader.ReadUInt32());
     public List<Axes> AxesArray = reader.ReadList(_ => new Axes(reader));
     public XForm[] Pose = reader.ReadArray(_ => reader.ReadXForm());
 }
-public class Human(ObjectReader reader) {
+public record Human(ObjectReader reader) {
     public XForm RootX = reader.ReadXForm();
     public Skeleton Skeleton = new(reader);
     public int[] LeftHand = reader.ReadArray(_ => reader.ReadInt32());
@@ -111,7 +111,7 @@ public class Human(ObjectReader reader) {
     public bool HasRightHand = reader.ReadBoolean();
     public bool HasTDoF = reader.Align(reader.ReadBoolean); // 5.2 and up
 }
-public sealed class Avatar(ObjectReader reader) : NamedObject {
+public sealed record Avatar(ObjectReader reader) : NamedObject {
     public readonly string Name = reader.ReadAlignedString();
     public uint Size = reader.ReadUInt32();
     public Skeleton AvatarSkeleton = new(reader);

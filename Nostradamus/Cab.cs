@@ -6,11 +6,10 @@ using static System.Linq.Enumerable;
 namespace Nostradamus;
 
 public class Cab {
-    public readonly Dictionary<long, ObjectInfo> Objects;
-    private List<SerializedType> Types;
+    public readonly Dictionary<long, object> Objects;
     public readonly List<string> Externals;
     
-    public Cab(Stream stream, bool loadObjects=true) {
+    public Cab(Stream stream) {
         var reader = new ObjectReader(stream);
         
         var metadataSize = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
@@ -23,12 +22,12 @@ public class Cab {
         var targetPlatform = reader.ReadInt32(); // 19 (StandaloneWindows64)
 
         var enableTypeTree = reader.ReadBoolean();
-        Types = Range(0, reader.ReadInt32())
+        var types = Range(0, reader.ReadInt32())
             .Select(_ => ReadType(reader, enableTypeTree, false)).ToList();
         var objCount = reader.ReadInt32();
         reader.AlignStream(); // don't ask me, I don't know either
-        Objects = Range(0, objCount).ToDictionary(_ => reader.ReadInt64(), _ =>
-            new ObjectInfo(dataOffset + reader.ReadUInt32(), reader.ReadUInt32(), Types[reader.ReadInt32()]));
+        var info = Range(0, objCount).ToDictionary(_ => reader.ReadInt64(), _ =>
+            new ObjectInfo(dataOffset + reader.ReadUInt32(), reader.ReadUInt32(), types[reader.ReadInt32()]));
         var scriptTypes = Range(0, reader.ReadInt32()).Select(_ => new LocalSerializedObjectIdentifier {
             LocalSerializedFileIndex = reader.ReadInt32(),
             LocalIdentifierInFile = reader.ReadInt64()
@@ -39,22 +38,12 @@ public class Cab {
             Type = reader.ReadInt32(),
             PathName = reader.ReadStringToNull()
         });
-        Externals = externals.Select(e => e.PathName.Split("/").Last()).ToList();
         var refTypes = Range(0, reader.ReadInt32())
             .Select(_ => ReadType(reader, enableTypeTree, true)).ToList();
         var userInformation = reader.ReadStringToNull();
 
-        if (!loadObjects) return;
-        PrintIt(reader);
-        // var rootPath = 0x56d315e1884a587e;
-        // foreach (var (pathId, objInfo) in Objects) {
-        //     var obj = ReadObject(Objects[pathId], reader);
-        //     Console.WriteLine($"{pathId:x16} {obj}");
-        //     if (obj is Transform tt && tt.Father.PathId == 0) {
-        //         Console.WriteLine("I am root!");
-        //         break;
-        //     }
-        // }
+        Objects = info.ToDictionary(i => i.Key, i => ReadObject(i.Value, reader));
+        Externals = externals.Select(e => e.PathName.Split("/").Last()).ToList();
     }
 
     private static SerializedType ReadType(ObjectReader reader, bool enableTypeTree, bool isRefType) {
@@ -239,36 +228,41 @@ public class Cab {
         };
     }
 
-    private void PrintIt(ObjectReader reader, long pathId=0x56d315e1884a587e, string a="") {
-        var info = Objects[pathId];
-        reader.BaseStream.Position = info.ByteStart;
-        var t = Transform.Parse(reader);
-        info = Objects[t.GameObject.PathId];
-        reader.BaseStream.Position = info.ByteStart;
-        var g = GameObject.Parse(reader);
-        Console.WriteLine($"{a}🎮 {g.Name}"); // +t
-        PrintObj(reader, g, info, a);
-        if (g.Name == "Bip001") return;
-        foreach (var c in t.Children)
-            PrintIt(reader, c.PathId, a + "|");
-    }
-
-    private void PrintObj(ObjectReader reader, GameObject g, ObjectInfo info, string a) {
-        foreach (var c in g.Components) {
-            var info2 = Objects[c.PathId];
-            if (info2.Type.ClassId == 4) continue; // transform
-            var o = ReadObject(info2, reader);
-            Console.WriteLine($"{a}↳ {o}");
-            if (o is GameObject g2)
-                PrintObj(reader, g2, info2, a + "↳");
-            // if (o is Transform t)
-            //     PrintIt(reader, t.GameObject.PathId, a + ">");
-        }
-    }
+    // private void PrintIt(ObjectReader reader, long pathId=0x56d315e1884a587e, string a="") {
+    //     var info = Objects[pathId];
+    //     reader.BaseStream.Position = info.ByteStart;
+    //     var t = Transform.Parse(reader);
+    //     info = Objects[t.GameObject.PathId];
+    //     reader.BaseStream.Position = info.ByteStart;
+    //     var g = GameObject.Parse(reader);
+    //     Console.WriteLine($"{a}🎮 {g.Name} {t.X}"); // +t
+    //     PrintObj(reader, g, info, a);
+    //     if (g.Name == "Bip001") return;
+    //     foreach (var c in t.Children)
+    //         PrintIt(reader, c.PathId, a + "|");
+    // }
+    //
+    // private void PrintObj(ObjectReader reader, GameObject g, ObjectInfo info, string a) {
+    //     foreach (var c in g.Components) {
+    //         var info2 = Objects[c.PathId];
+    //         if (info2.Type.ClassId == 4) continue; // transform
+    //         var o = ReadObject(info2, reader);
+    //         Console.WriteLine($"{a}↳ {o}");
+    //         if (o is GameObject g2)
+    //             PrintObj(reader, g2, info2, a + "↳");
+    //         // if (o is Transform t)
+    //         //     PrintIt(reader, t.GameObject.PathId, a + ">");
+    //     }
+    // }
 }
 
 
-public record XForm(Vector3 Translate, Quaternion Rotate, Vector3 Scale);
+public record XForm(Vector3 Translate, Quaternion Rotate, Vector3 Scale) {
+    public override string ToString() => string.Join(" ",
+        Translate is { X: 0, Y: 0, Z: 0 } ? "⊕" : "",
+        Rotate is { W: 1, X: 0, Y: 0, Z: 0 } ? "↺" : "",
+        Scale is { X: 0, Y: 0, Z: 0 } ? "⇲" : "");
+};
     
 public class ObjectReader(Stream input) : BinaryReader(input) {
     public PPtr<T> ReadPointer<T>() => new(ReadInt32(), ReadInt64());
@@ -356,6 +350,14 @@ public record FileIdentifier {
 }
 
 public record PPtr<T>(int FileId, long PathId) {
+    // T Point(Cab cab, Dictionary<string, string> cabMap) {
+    //     if (FileId == 0) return (T)Cab.ReadObject(cab.Objects[PathId]);
+    //     var extCabName = cab.Externals[FileId - 1];
+    //     var blkName = cabMap[extCabName];
+    //     cab = LoadCab(blkName, extCabName);
+    //     return (T)Cab.ReadObject(cab.Objects[PathId]);
+    // }
+    
     public override string ToString() => $"{PathId:x16}::{FileId}";
 }
 
@@ -366,7 +368,7 @@ public record GameObject(List<PPtr<GameComponent>> Components, int Layer, string
     public override string ToString() => $"GameObject('{Name}' l={Layer} Components=[{string.Join(",", Components)}])";
 }
 
-public record Transform(PPtr<GameObject> GameObject, XForm X, List<PPtr<Transform>> Children, PPtr<Transform> Father) { // : GameComponent
+public record Transform(PPtr<GameObject> GameObject, XForm X, List<PPtr<Transform>> Children, PPtr<Transform> Father) : GameComponent {
     public static Transform Parse(ObjectReader r) {
         var gameObject = r.ReadPointer<GameObject>();
         var localRotation = r.ReadQuaternion();
