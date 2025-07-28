@@ -227,33 +227,6 @@ public class Cab {
             _ => $"Unknown classId:{o.Type.ClassId}"
         };
     }
-
-    // private void PrintIt(ObjectReader reader, long pathId=0x56d315e1884a587e, string a="") {
-    //     var info = Objects[pathId];
-    //     reader.BaseStream.Position = info.ByteStart;
-    //     var t = Transform.Parse(reader);
-    //     info = Objects[t.GameObject.PathId];
-    //     reader.BaseStream.Position = info.ByteStart;
-    //     var g = GameObject.Parse(reader);
-    //     Console.WriteLine($"{a}🎮 {g.Name} {t.X}"); // +t
-    //     PrintObj(reader, g, info, a);
-    //     if (g.Name == "Bip001") return;
-    //     foreach (var c in t.Children)
-    //         PrintIt(reader, c.PathId, a + "|");
-    // }
-    //
-    // private void PrintObj(ObjectReader reader, GameObject g, ObjectInfo info, string a) {
-    //     foreach (var c in g.Components) {
-    //         var info2 = Objects[c.PathId];
-    //         if (info2.Type.ClassId == 4) continue; // transform
-    //         var o = ReadObject(info2, reader);
-    //         Console.WriteLine($"{a}↳ {o}");
-    //         if (o is GameObject g2)
-    //             PrintObj(reader, g2, info2, a + "↳");
-    //         // if (o is Transform t)
-    //         //     PrintIt(reader, t.GameObject.PathId, a + ">");
-    //     }
-    // }
 }
 
 
@@ -350,14 +323,6 @@ public record FileIdentifier {
 }
 
 public record PPtr<T>(int FileId, long PathId) {
-    // T Point(Cab cab, Dictionary<string, string> cabMap) {
-    //     if (FileId == 0) return (T)Cab.ReadObject(cab.Objects[PathId]);
-    //     var extCabName = cab.Externals[FileId - 1];
-    //     var blkName = cabMap[extCabName];
-    //     cab = LoadCab(blkName, extCabName);
-    //     return (T)Cab.ReadObject(cab.Objects[PathId]);
-    // }
-    
     public override string ToString() => $"{PathId:x16}::{FileId}";
 }
 
