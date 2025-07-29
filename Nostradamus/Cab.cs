@@ -44,6 +44,7 @@ public class Cab {
 
         Objects = info.ToDictionary(i => i.Key, i => ReadObject(i.Value, reader));
         Externals = externals.Select(e => e.PathName.Split("/").Last()).ToList();
+        ResolveInternalPointers();
     }
 
     private static SerializedType ReadType(ObjectReader reader, bool enableTypeTree, bool isRefType) {
@@ -224,8 +225,24 @@ public class Cab {
             114 => MonoBehaviour.Parse(reader),
             115 => MonoScript.Parse(reader),
             137 => new SkinnedMeshRenderer(reader, o.Type.OldTypeHash),
+            142 => AssetBundle.Parse(reader),
             _ => $"Unknown classId:{o.Type.ClassId}"
         };
+    }
+
+    private void ResolveInternalPointers() {
+        foreach (var o in Objects.Values) {
+            if (o is Transform tt) {
+                tt.GameObject.Resolve(Objects, Externals);
+                tt.Children.ForEach(c => c.Resolve(Objects, Externals));
+            // } else if (o is GameObject g) {
+            //     g.Components.ForEach(c => c.Resolve(Objects, Externals));
+            } else if (o is SkinnedMeshRenderer smr) {
+                smr.Materials.ForEach(m => m.Resolve(Objects, Externals));
+            } else if (o is AssetBundle ab) {
+                ab.PreloadTable.ForEach(c => c.Resolve(Objects, Externals));
+            }
+        }
     }
 }
 
@@ -238,7 +255,11 @@ public record XForm(Vector3 Translate, Quaternion Rotate, Vector3 Scale) {
 };
     
 public class ObjectReader(Stream input) : BinaryReader(input) {
-    public PPtr<T> ReadPointer<T>() => new(ReadInt32(), ReadInt64());
+    public PPtr<T> ReadPointer<T>() {
+        var fileId = ReadInt32();
+        return new PPtr<T>(fileId, ReadInt64());
+    }
+
     public T[] ReadArray<T>(Func<int,T> fn) => Enumerable.Range(0, ReadInt32()).Select(fn).ToArray();
     public List<T> ReadList<T>(Func<int,T> fn) => Enumerable.Range(0, ReadInt32()).Select(fn).ToList();
     public Vector3 ReadVector3() => new(ReadSingle(), ReadSingle(), ReadSingle());
@@ -277,6 +298,8 @@ public class ObjectReader(Stream input) : BinaryReader(input) {
         AlignStream(alignment);
         return ret;
     }
+
+    public List<string> Externals { get; set; }
 }
 
 public record SerializedType {
@@ -323,7 +346,15 @@ public record FileIdentifier {
 }
 
 public record PPtr<T>(int FileId, long PathId) {
-    public override string ToString() => $"{PathId:x16}::{FileId}";
+    public T? Val;
+    public string? ExtPath;
+
+    public void Resolve(Dictionary<long, object> objects, List<string> externals) {
+        if (FileId == 0) Val = (T)objects[PathId];
+        else ExtPath = externals[FileId - 1];
+    }
+    
+    public override string ToString() => $"{PathId:x16}::{Val?.ToString() ?? ExtPath ?? ""}";
 }
 
 public record GameObject(List<PPtr<GameComponent>> Components, int Layer, string Name) {

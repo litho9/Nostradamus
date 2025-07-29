@@ -298,9 +298,7 @@ public sealed class Mesh : NamedObject {
         var m_BakedTriangleCollisionMesh = reader.ReadBytes(reader.ReadInt32());
         reader.AlignStream();
 
-        var m_MeshMetrics = new float[2];
-        m_MeshMetrics[0] = reader.ReadSingle();
-        m_MeshMetrics[1] = reader.ReadSingle();
+        float[] m_MeshMetrics = [reader.ReadSingle(), reader.ReadSingle()];
         
         // if (reader.Game.Type.IsZZZ())
         var m_MetricsDirty = reader.ReadBoolean();
@@ -1027,4 +1025,14 @@ public record MeshRenderer : Renderer {
 public record MeshFilter(PPtr<GameObject> GameObject, PPtr<Mesh> Mesh) : GameComponent {
     public static MeshFilter Parse(ObjectReader r) =>
         new MeshFilter(r.ReadPointer<GameObject>(), r.ReadPointer<Mesh>());
+}
+
+public record AssetInfo(string Id, int Idx, int Size, PPtr<object> Asset);
+
+public record AssetBundle(string Name, List<PPtr<object>> PreloadTable, List<AssetInfo> Container) {
+    public static AssetBundle Parse(ObjectReader r) => new(
+        r.ReadAlignedString(),
+        r.ReadList(_ => r.ReadPointer<object>()),
+        r.ReadList(_ => new AssetInfo(r.ReadAlignedString(),
+            r.ReadInt32(), r.ReadInt32(), r.ReadPointer<object>())));
 }

@@ -160,6 +160,7 @@ public static class Descrambelhador {
     }
 
     public static int OodleLZ(Span<byte> compressed, Span<byte> decompressed) {
-        return OodleLZ_Decompress(ref compressed[0], compressed.Length, ref decompressed[0], decompressed.Length, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3);
+        // Console.WriteLine($"decoder_type={compressed[1]}");
+        return OodleLZ_Decompress(ref compressed[0], compressed.Length, ref decompressed[0], decompressed.Length, 1, 0, 1, 0, 0, 0, 0, 0, 0, 3);
     }
 }

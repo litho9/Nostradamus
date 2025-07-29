@@ -4,20 +4,28 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 var watch = System.Diagnostics.Stopwatch.StartNew();
 Console.WriteLine("** Nostradamus **");
 
-var path0 = @"C:\Program Files\HoYoPlay\games\ZenlessZoneZero Game\ZenlessZoneZero_Data\StreamingAssets\Blocks\";
+var path0 = Environment.GetEnvironmentVariable("GAME_PATH");
 var blk = new Blk(path0 + "3212318446.blk");
 Console.WriteLine($"blk processed in {watch.ElapsedMilliseconds}ms.");
+
+var blk2 = new Blk(path0 + "2299538835.blk"); // SeparateMesh_Avatar_Female_Size01_Jufufu_Model_Jufufu_Body_1
+var cab2 = blk2.Cabs["CAB-cd0a7c1addc386d573a202aad65e4aff"];
+
+
 var cab0 = blk.Cabs["CAB-0aa2768ea164a0d7db932b50052974af"];
 var root = (Transform)cab0.Objects.Values.Single(o => o is Transform { Father.PathId: 0 });
 PrintCab(cab0, root);
+//
+// foreach (var (k, o) in cab0.Objects)
+// //     if (o is not Transform && o is not GameObject)
+//     Console.WriteLine($"{k:x16}::{o}");
 
 watch.Stop();
 Console.WriteLine($"Execution finished in {watch.ElapsedMilliseconds}ms.");
 
 void PrintCab(Cab cab, Transform t, string ident="") {
-    var g = Point(t.GameObject, cab);
-    Console.WriteLine($"{ident}🎮 {g.Name} {t.X}");
-    foreach (var c in g.Components) {
+    Console.WriteLine($"{ident}🎮 {t.GameObject.Val!.Name} {t.X}");
+    foreach (var c in t.GameObject.Val!.Components) {
         var o = Point(c, cab);
         if (o is Animator aa) {
             var avatar = Point(aa.AvatarPtr, cab);
@@ -27,9 +35,9 @@ void PrintCab(Cab cab, Transform t, string ident="") {
         } else if (o is not Transform)
             Console.WriteLine($"{ident} ↳ {o}");
     }
-    if (g.Name == "Bip001") return;
+    if (t.GameObject.Val!.Name == "Bip001") return;
     foreach (var c in t.Children)
-        PrintCab(cab, Point(c, cab), ident + "|");
+        PrintCab(cab, c.Val!, ident + "|");
 }
 
 T Point<T>(PPtr<T> pPtr, Cab cab) {
