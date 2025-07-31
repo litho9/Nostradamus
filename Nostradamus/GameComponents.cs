@@ -473,8 +473,7 @@ public class SamplerParameter(ObjectReader reader) {
     public int bindPoint = reader.ReadInt32();
 }
 
-public class ConstantBuffer
-{
+public class ConstantBuffer {
     public int m_NameIndex;
     public List<MatrixParameter> m_MatrixParams;
     public List<VectorParameter> m_VectorParams;
@@ -482,29 +481,11 @@ public class ConstantBuffer
     public int m_Size;
     public bool m_IsPartialCB;
 
-    public ConstantBuffer(ObjectReader reader)
-    {
+    public ConstantBuffer(ObjectReader reader) {
         m_NameIndex = reader.ReadInt32();
-
-        int numMatrixParams = reader.ReadInt32();
-        m_MatrixParams = new List<MatrixParameter>();
-        for (int i = 0; i < numMatrixParams; i++)
-        {
-            m_MatrixParams.Add(new MatrixParameter(reader));
-        }
-
-        int numVectorParams = reader.ReadInt32();
-        m_VectorParams = new List<VectorParameter>();
-        for (int i = 0; i < numVectorParams; i++)
-        {
-            m_VectorParams.Add(new VectorParameter(reader));
-        }
-        int numStructParams = reader.ReadInt32();
-        m_StructParams = new List<StructParameter>();
-        for (int i = 0; i < numStructParams; i++)
-        {
-            m_StructParams.Add(new StructParameter(reader));
-        }
+        m_MatrixParams = reader.ReadList(_ => new MatrixParameter(reader));
+        m_VectorParams = reader.ReadList(_ => new VectorParameter(reader));
+        m_StructParams = reader.ReadList(_ => new StructParameter(reader));
         m_Size = reader.ReadInt32();
     }
 }
@@ -515,76 +496,16 @@ public class UAVParameter(ObjectReader reader) {
     public int m_OriginalIndex = reader.ReadInt32();
 }
 
-public class SerializedProgramParameters
-    {
-        public List<VectorParameter> m_VectorParams;
-        public List<MatrixParameter> m_MatrixParams;
-        public List<TextureParameter> m_TextureParams;
-        public List<BufferBinding> m_BufferParams;
-        public List<ConstantBuffer> m_ConstantBuffers;
-        public List<BufferBinding> m_ConstantBufferBindings;
-        public List<UAVParameter> m_UAVParams;
-        public List<SamplerParameter> m_Samplers;
-
-        public SerializedProgramParameters(ObjectReader reader)
-        {
-            int numVectorParams = reader.ReadInt32();
-            m_VectorParams = new List<VectorParameter>();
-            for (int i = 0; i < numVectorParams; i++)
-            {
-                m_VectorParams.Add(new VectorParameter(reader));
-            }
-
-            int numMatrixParams = reader.ReadInt32();
-            m_MatrixParams = new List<MatrixParameter>();
-            for (int i = 0; i < numMatrixParams; i++)
-            {
-                m_MatrixParams.Add(new MatrixParameter(reader));
-            }
-
-            int numTextureParams = reader.ReadInt32();
-            m_TextureParams = new List<TextureParameter>();
-            for (int i = 0; i < numTextureParams; i++)
-            {
-                m_TextureParams.Add(new TextureParameter(reader));
-            }
-
-            int numBufferParams = reader.ReadInt32();
-            m_BufferParams = new List<BufferBinding>();
-            for (int i = 0; i < numBufferParams; i++)
-            {
-                m_BufferParams.Add(new BufferBinding(reader));
-            }
-
-            int numConstantBuffers = reader.ReadInt32();
-            m_ConstantBuffers = new List<ConstantBuffer>();
-            for (int i = 0; i < numConstantBuffers; i++)
-            {
-                m_ConstantBuffers.Add(new ConstantBuffer(reader));
-            }
-
-            int numConstantBufferBindings = reader.ReadInt32();
-            m_ConstantBufferBindings = new List<BufferBinding>();
-            for (int i = 0; i < numConstantBufferBindings; i++)
-            {
-                m_ConstantBufferBindings.Add(new BufferBinding(reader));
-            }
-
-            int numUAVParams = reader.ReadInt32();
-            m_UAVParams = new List<UAVParameter>();
-            for (int i = 0; i < numUAVParams; i++)
-            {
-                m_UAVParams.Add(new UAVParameter(reader));
-            }
-
-            int numSamplers = reader.ReadInt32();
-            m_Samplers = new List<SamplerParameter>();
-            for (int i = 0; i < numSamplers; i++)
-            {
-                m_Samplers.Add(new SamplerParameter(reader));
-            }
-        }
-    }
+public class SerializedProgramParameters(ObjectReader reader) {
+    public List<VectorParameter> m_VectorParams = reader.ReadList(_ => new VectorParameter(reader));
+    public List<MatrixParameter> m_MatrixParams = reader.ReadList(_ => new MatrixParameter(reader));
+    public List<TextureParameter> m_TextureParams = reader.ReadList(_ => new TextureParameter(reader));
+    public List<BufferBinding> m_BufferParams = reader.ReadList(_ => new BufferBinding(reader));
+    public List<ConstantBuffer> m_ConstantBuffers = reader.ReadList(_ => new ConstantBuffer(reader));
+    public List<BufferBinding> m_ConstantBufferBindings = reader.ReadList(_ => new BufferBinding(reader));
+    public List<UAVParameter> m_UAVParams = reader.ReadList(_ => new UAVParameter(reader));
+    public List<SamplerParameter> m_Samplers = reader.ReadList(_ => new SamplerParameter(reader));
+}
 
 public class SerializedSubProgram {
     public uint m_BlobIndex;
@@ -602,74 +523,31 @@ public class SerializedSubProgram {
     public List<UAVParameter> m_UAVParams;
     public List<SamplerParameter> m_Samplers;
 
-    public static bool HasInstancedStructuredBuffers(SerializedType type) => type.Match( "E99740711222CD922E9A6F92FF1EB07A", "B239746E4EC6E4D6D7BA27C84178610A", "3FD560648A91A99210D5DDF2BE320536");
+    public static bool HasInstancedStructuredBuffers(SerializedType type) => type.Match("E99740711222CD922E9A6F92FF1EB07A", "B239746E4EC6E4D6D7BA27C84178610A", "3FD560648A91A99210D5DDF2BE320536");
     public static bool HasIsAdditionalBlob(SerializedType type) => type.Match("B239746E4EC6E4D6D7BA27C84178610A");
 
     public SerializedSubProgram(ObjectReader reader) {
         m_BlobIndex = reader.ReadUInt32();
         // if (HasIsAdditionalBlob(reader.SerializedType)) { TODO
-        //     var m_IsAdditionalBlob = reader.ReadBoolean();
-        //     reader.AlignStream();
+        var m_IsAdditionalBlob = reader.ReadBoolean();
+        reader.AlignStream();
         // }
 
         m_Channels = new ParserBindChannels(reader);
 
-        var m_GlobalKeywordIndices = reader.ReadArray(_ => reader.ReadUInt16());
-        reader.AlignStream();
-        var m_LocalKeywordIndices = reader.ReadArray(_ => reader.ReadUInt16());
-        reader.AlignStream();
-
+        var m_GlobalKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
+        var m_LocalKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
         m_ShaderHardwareTier = reader.ReadSByte();
-        m_GpuProgramType = reader.ReadSByte();
-        reader.AlignStream();
+        m_GpuProgramType = reader.Align(reader.ReadSByte);
 
-        int numVectorParams = reader.ReadInt32();
-        m_VectorParams = new List<VectorParameter>();
-        for (int i = 0; i < numVectorParams; i++) {
-            m_VectorParams.Add(new VectorParameter(reader));
-        }
-
-        int numMatrixParams = reader.ReadInt32();
-        m_MatrixParams = new List<MatrixParameter>();
-        for (int i = 0; i < numMatrixParams; i++) {
-            m_MatrixParams.Add(new MatrixParameter(reader));
-        }
-
-        int numTextureParams = reader.ReadInt32();
-        m_TextureParams = new List<TextureParameter>();
-        for (int i = 0; i < numTextureParams; i++) {
-            m_TextureParams.Add(new TextureParameter(reader));
-        }
-
-        int numBufferParams = reader.ReadInt32();
-        m_BufferParams = new List<BufferBinding>();
-        for (int i = 0; i < numBufferParams; i++) {
-            m_BufferParams.Add(new BufferBinding(reader));
-        }
-
-        int numConstantBuffers = reader.ReadInt32();
-        m_ConstantBuffers = new List<ConstantBuffer>();
-        for (int i = 0; i < numConstantBuffers; i++) {
-            m_ConstantBuffers.Add(new ConstantBuffer(reader));
-        }
-
-        int numConstantBufferBindings = reader.ReadInt32();
-        m_ConstantBufferBindings = new List<BufferBinding>();
-        for (int i = 0; i < numConstantBufferBindings; i++) {
-            m_ConstantBufferBindings.Add(new BufferBinding(reader));
-        }
-
-        int numUAVParams = reader.ReadInt32();
-        m_UAVParams = new List<UAVParameter>();
-        for (int i = 0; i < numUAVParams; i++) {
-            m_UAVParams.Add(new UAVParameter(reader));
-        }
-
-        int numSamplers = reader.ReadInt32();
-        m_Samplers = new List<SamplerParameter>();
-        for (int i = 0; i < numSamplers; i++) {
-            m_Samplers.Add(new SamplerParameter(reader));
-        }
+        m_VectorParams = reader.ReadList(_ => new VectorParameter(reader));
+        m_MatrixParams = reader.ReadList(_ => new MatrixParameter(reader));
+        m_TextureParams = reader.ReadList(_ => new TextureParameter(reader));
+        m_BufferParams = reader.ReadList(_ => new BufferBinding(reader));
+        m_ConstantBuffers = reader.ReadList(_ => new ConstantBuffer(reader));
+        m_ConstantBufferBindings = reader.ReadList(_ => new BufferBinding(reader));
+        m_UAVParams = reader.ReadList(_ => new UAVParameter(reader));
+        m_Samplers = reader.ReadList(_ => new SamplerParameter(reader));
 
         var m_ShaderRequirements = reader.ReadInt32();
 
@@ -683,16 +561,8 @@ public class SerializedSubProgram {
     }
 }
 
-public class SerializedProgram {
-    public List<SerializedSubProgram> m_SubPrograms;
-
-    public SerializedProgram(ObjectReader reader) {
-        int numSubPrograms = reader.ReadInt32();
-        m_SubPrograms = new List<SerializedSubProgram>();
-        for (int i = 0; i < numSubPrograms; i++) {
-            m_SubPrograms.Add(new SerializedSubProgram(reader));
-        }
-    }
+public class SerializedProgram(ObjectReader reader) {
+    public List<SerializedSubProgram> m_SubPrograms = reader.ReadList(_ => new SerializedSubProgram(reader));
 }
 
 public class SerializedShaderFloatValue(ObjectReader reader) {
@@ -911,13 +781,13 @@ public record Color4(float R, float G, float B, float A);
 public record UnityPropertySheet {
     public Dictionary<string, UnityTexEnv> TexEnvs;
     public Dictionary<string, float> Floats;
-    public Dictionary<string, Color4> Colors;
+    public List<(string, Color4)> Colors;
 
-    public UnityPropertySheet(ObjectReader reader) {
-        TexEnvs = Range(0, reader.ReadInt32()).ToDictionary(_ => reader.ReadAlignedString(), _ => new UnityTexEnv(reader));
-        Floats = Range(0, reader.ReadInt32()).ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadSingle());
-        Colors = Range(0, reader.ReadInt32()).ToDictionary(_ => reader.ReadAlignedString(), _ =>
-            new Color4(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
+    public UnityPropertySheet(ObjectReader r) {
+        TexEnvs = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => new UnityTexEnv(r));
+        Floats = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => r.ReadSingle());
+        Colors = r.ReadList(_ => (r.ReadAlignedString(), 
+            new Color4(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle())));
     }
 }
 

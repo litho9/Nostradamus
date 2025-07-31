@@ -44,7 +44,6 @@ public class Cab {
 
         Objects = info.ToDictionary(i => i.Key, i => ReadObject(i.Value, reader));
         Externals = externals.Select(e => e.PathName.Split("/").Last()).ToList();
-        ResolveInternalPointers();
     }
 
     private static SerializedType ReadType(ObjectReader reader, bool enableTypeTree, bool isRefType) {
@@ -216,9 +215,11 @@ public class Cab {
         return o.Type.ClassId switch {
             1 => GameObject.Parse(reader),
             4 => Transform.Parse(reader),
+            21 => new Material(reader),
             23 => new MeshRenderer(reader, o.Type.OldTypeHash),
             33 => MeshFilter.Parse(reader),
             43 => new Mesh(reader),
+            48 => new Shader(reader),
             90 => new Avatar(reader),
             95 => new Animator(reader),
             // 111 => new Animation(reader),
@@ -230,19 +231,32 @@ public class Cab {
         };
     }
 
-    private void ResolveInternalPointers() {
+    public void ResolveInternalPointers() {
         foreach (var o in Objects.Values) {
             if (o is Transform tt) {
-                tt.GameObject.Resolve(Objects, Externals);
-                tt.Children.ForEach(c => c.Resolve(Objects, Externals));
-            // } else if (o is GameObject g) {
-            //     g.Components.ForEach(c => c.Resolve(Objects, Externals));
+                ResolvePointer(tt.GameObject);
+                tt.Children.ForEach(ResolvePointer);
+            } else if (o is GameObject g) {
+                g.Components.ForEach(ResolvePointer);
+            } else if (o is Animator aa) {
+                if (aa.AvatarPtr.PathId == 0) {
+                    ResolvePointer(aa.GameObject);
+                    Console.WriteLine($"[CAB] Animator '{aa.GameObject.Val!.Name}' with no Avatar.");
+                } else
+                    ResolvePointer(aa.AvatarPtr);
             } else if (o is SkinnedMeshRenderer smr) {
-                smr.Materials.ForEach(m => m.Resolve(Objects, Externals));
+                smr.Materials.ForEach(ResolvePointer);
+            } else if (o is Material mat) {
+                ResolvePointer(mat.Shader);
             } else if (o is AssetBundle ab) {
-                ab.PreloadTable.ForEach(c => c.Resolve(Objects, Externals));
+                ab.PreloadTable.ForEach(ResolvePointer);
             }
         }
+    }
+
+    private void ResolvePointer<T>(PPtr<T> pPtr) {
+        if (pPtr.FileId == 0) pPtr.Val = (T)Objects[pPtr.PathId];
+        else pPtr.ExtPath = Externals[pPtr.FileId - 1];
     }
 }
 
@@ -349,17 +363,12 @@ public record PPtr<T>(int FileId, long PathId) {
     public T? Val;
     public string? ExtPath;
 
-    public void Resolve(Dictionary<long, object> objects, List<string> externals) {
-        if (FileId == 0) Val = (T)objects[PathId];
-        else ExtPath = externals[FileId - 1];
-    }
-    
     public override string ToString() => $"{PathId:x16}::{Val?.ToString() ?? ExtPath ?? ""}";
 }
 
-public record GameObject(List<PPtr<GameComponent>> Components, int Layer, string Name) {
+public record GameObject(List<PPtr<object>> Components, int Layer, string Name) {
     public static GameObject Parse(ObjectReader r) =>
-        new GameObject(r.ReadList(_ => r.ReadPointer<GameComponent>()), r.ReadInt32(), r.ReadAlignedString());
+        new(r.ReadList(_ => r.ReadPointer<object>()), r.ReadInt32(), r.ReadAlignedString());
 
     public override string ToString() => $"GameObject('{Name}' l={Layer} Components=[{string.Join(",", Components)}])";
 }
@@ -376,5 +385,5 @@ public record Transform(PPtr<GameObject> GameObject, XForm X, List<PPtr<Transfor
         return new Transform(gameObject, x, children, father);
     }
 
-    public override string ToString() => $"Transform(g={GameObject} Father={Father} Children=[{string.Join(",", Children)}]";
+    public override string ToString() => $"Transform(X={X}, Children=[{string.Join(",", Children)}])";
 }

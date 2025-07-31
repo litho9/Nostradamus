@@ -6,14 +6,13 @@ using static Nostradamus.Descrambelhador;
 
 namespace Nostradamus;
 
-public class Mhy1 {
+public class Mhy1(string dir) {
     public readonly Dictionary<string, Dictionary<string, Cab>> Blocks = new(); // blkName↝cabName↝Cab
     private readonly ConcurrentDictionary<string, string> _cabMap = new(); // cabName↝blkName
 
     public Dictionary<string, Cab> LoadBlock(string blockName) {
-        var path0 = Environment.GetEnvironmentVariable("GAME_PATH");
         Dictionary<string, Cab> cabs = new();
-        var stream = File.Open(path0 + blockName, FileMode.Open, FileAccess.Read);
+        var stream = File.Open(blockName, FileMode.Open, FileAccess.Read);
         var reader = new BinaryReader(stream);
         while (stream.Position < stream.Length) {
             var (nodes, blocks) = ReadMhy1Headers(reader);
@@ -46,12 +45,12 @@ public class Mhy1 {
                 cabs.Add(node.Path, new Cab(blocksStream));
             }
         }
+        foreach (var cab in cabs.Values) cab.ResolveInternalPointers();
         Blocks.Add(blockName, cabs);
         return cabs;
     }
 
     public void LoadCabMap() {
-        var dir = Environment.GetEnvironmentVariable("GAME_PATH")!;
         var d = new DirectoryInfo(dir);
         var files = d.GetFiles("*.blk");
         Parallel.ForEach(files, file => {
@@ -69,15 +68,16 @@ public class Mhy1 {
         });
     }
     
-    T Point<T>(PPtr<T> pPtr, Cab cab) {
-        var cab2 = pPtr.FileId == 0 ? cab : GetCab(cab.Externals[pPtr.FileId - 1]);
-        return (T)cab2.Objects[pPtr.PathId];
-    }
-
-    private Cab GetCab(string cabName) {
-        if (!_cabMap.ContainsKey(cabName)) LoadCabMap();
-        if (!Blocks.ContainsKey(_cabMap[cabName])) LoadBlock(_cabMap[cabName]);
-        return Blocks[_cabMap[cabName]][cabName];
+    public T Point<T>(PPtr<T> pPtr) {
+        if (pPtr.Val == null) {
+            if (pPtr.ExtPath == null) return default; // TODO
+            if (!_cabMap.ContainsKey(pPtr.ExtPath)) LoadCabMap();
+            var blockName = _cabMap[pPtr.ExtPath];
+            if (!Blocks.ContainsKey(blockName)) LoadBlock(blockName);
+            var cab2 = Blocks[blockName][pPtr.ExtPath];
+            pPtr.Val = (T)cab2.Objects[pPtr.PathId];
+        }
+        return (T)pPtr.Val!;
     }
 
     private (List<DirNode>, List<StorageBlock>) ReadMhy1Headers(BinaryReader reader) {
