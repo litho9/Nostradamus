@@ -7,7 +7,7 @@ namespace Nostradamus;
 
 public class Cab {
     public readonly Dictionary<long, object> Objects;
-    public readonly List<string> Externals;
+    private readonly List<string> Externals;
     
     public Cab(Stream stream) {
         var reader = new ObjectReader(stream);
@@ -22,24 +22,21 @@ public class Cab {
         var targetPlatform = reader.ReadInt32(); // 19 (StandaloneWindows64)
 
         var enableTypeTree = reader.ReadBoolean();
-        var types = Range(0, reader.ReadInt32())
-            .Select(_ => ReadType(reader, enableTypeTree, false)).ToList();
-        var objCount = reader.ReadInt32();
-        reader.AlignStream(); // don't ask me, I don't know either
+        var types = reader.ReadList(_ => ReadType(reader, enableTypeTree, false));
+        var objCount = reader.Align(reader.ReadInt32); // don't ask me why align, I don't know either
         var info = Range(0, objCount).ToDictionary(_ => reader.ReadInt64(), _ =>
             new ObjectInfo(dataOffset + reader.ReadUInt32(), reader.ReadUInt32(), types[reader.ReadInt32()]));
-        var scriptTypes = Range(0, reader.ReadInt32()).Select(_ => new LocalSerializedObjectIdentifier {
+        var scriptTypes = reader.ReadList(_ => new LocalSerializedObjectIdentifier {
             LocalSerializedFileIndex = reader.ReadInt32(),
             LocalIdentifierInFile = reader.ReadInt64()
-        }).ToList();
+        });
         var externals = reader.ReadList(_ => new FileIdentifier {
             TempEmpty = reader.ReadStringToNull(),
             Guid = new Guid(reader.ReadBytes(16)),
             Type = reader.ReadInt32(),
             PathName = reader.ReadStringToNull()
         });
-        var refTypes = Range(0, reader.ReadInt32())
-            .Select(_ => ReadType(reader, enableTypeTree, true)).ToList();
+        var refTypes = reader.ReadList(_ => ReadType(reader, enableTypeTree, true));
         var userInformation = reader.ReadStringToNull();
 
         Objects = info.ToDictionary(i => i.Key, i => ReadObject(i.Value, reader));
@@ -239,10 +236,10 @@ public class Cab {
             } else if (o is GameObject g) {
                 g.Components.ForEach(ResolvePointer);
             } else if (o is Animator aa) {
-                if (aa.AvatarPtr.PathId == 0) {
-                    ResolvePointer(aa.GameObject);
+                ResolvePointer(aa.GameObject);
+                if (aa.AvatarPtr.PathId == 0)
                     Console.WriteLine($"[CAB] Animator '{aa.GameObject.Val!.Name}' with no Avatar.");
-                } else
+                else
                     ResolvePointer(aa.AvatarPtr);
             } else if (o is SkinnedMeshRenderer smr) {
                 smr.Materials.ForEach(ResolvePointer);
@@ -269,13 +266,9 @@ public record XForm(Vector3 Translate, Quaternion Rotate, Vector3 Scale) {
 };
     
 public class ObjectReader(Stream input) : BinaryReader(input) {
-    public PPtr<T> ReadPointer<T>() {
-        var fileId = ReadInt32();
-        return new PPtr<T>(fileId, ReadInt64());
-    }
-
-    public T[] ReadArray<T>(Func<int,T> fn) => Enumerable.Range(0, ReadInt32()).Select(fn).ToArray();
-    public List<T> ReadList<T>(Func<int,T> fn) => Enumerable.Range(0, ReadInt32()).Select(fn).ToList();
+    public PPtr<T> ReadPointer<T>() => new(ReadInt32(), ReadInt64());
+    public T[] ReadArray<T>(Func<int,T> fn) => Range(0, ReadInt32()).Select(fn).ToArray();
+    public List<T> ReadList<T>(Func<int,T> fn) => Range(0, ReadInt32()).Select(fn).ToList();
     public Vector3 ReadVector3() => new(ReadSingle(), ReadSingle(), ReadSingle());
     public Vector4 ReadVector4() => new(ReadSingle(), ReadSingle(), ReadSingle(), ReadSingle());
     public Quaternion ReadQuaternion() => new(ReadSingle(), ReadSingle(), ReadSingle(), ReadSingle());
@@ -303,17 +296,12 @@ public class ObjectReader(Stream input) : BinaryReader(input) {
     
     public string ReadAlignedString() => Align(() => Encoding.UTF8.GetString(ReadBytes(ReadInt32())));
 
-    public void AlignStream(int alignment = 4) {
-        var mod = BaseStream.Position % alignment;
-        if (mod != 0) BaseStream.Position += alignment - mod;
-    }
     public T Align<T>(Func<T> fn, int alignment = 4) {
         var ret = fn();
-        AlignStream(alignment);
+        var mod = BaseStream.Position % alignment;
+        if (mod != 0) BaseStream.Position += alignment - mod;
         return ret;
     }
-
-    public List<string> Externals { get; set; }
 }
 
 public record SerializedType {
@@ -373,7 +361,7 @@ public record GameObject(List<PPtr<object>> Components, int Layer, string Name) 
     public override string ToString() => $"GameObject('{Name}' l={Layer} Components=[{string.Join(",", Components)}])";
 }
 
-public record Transform(PPtr<GameObject> GameObject, XForm X, List<PPtr<Transform>> Children, PPtr<Transform> Father) : GameComponent {
+public record Transform(PPtr<GameObject> GameObject, XForm X, List<PPtr<Transform>> Children, PPtr<Transform> Father) {
     public static Transform Parse(ObjectReader r) {
         var gameObject = r.ReadPointer<GameObject>();
         var localRotation = r.ReadQuaternion();
