@@ -6,7 +6,7 @@ var path0 = Environment.GetEnvironmentVariable("GAME_PATH")!;
 Console.WriteLine("** Nostradamus **");
 var watch = System.Diagnostics.Stopwatch.StartNew();
 var mhy1 = new Mhy1(path0);
-mhy1.LoadCabMap();
+// mhy1.LoadCabMap();
 Console.WriteLine($"cabMap loaded in {watch.ElapsedMilliseconds}ms.");
 
 watch.Restart();
@@ -19,14 +19,8 @@ var blk2 = mhy1.LoadBlock(path0 + "2299538835.blk"); // SeparateMesh_Avatar_Fema
 var cab2 = blk2["CAB-cd0a7c1addc386d573a202aad65e4aff"];
 Console.WriteLine($"blk processed in {watch.ElapsedMilliseconds}ms.");
 
-
 var root = (Transform)cab0.Objects.Values.Single(o => o is Transform { Father.PathId: 0 });
 PrintCab(root);
-//
-// foreach (var (k, o) in cab0.Objects)
-// //     if (o is not Transform && o is not GameObject)
-//     Console.WriteLine($"{k:x16}::{o}");
-
 watch.Stop();
 Console.WriteLine($"Execution finished in {watch.ElapsedMilliseconds}ms.");
 
@@ -41,8 +35,10 @@ void PrintCab(Transform t, string ident="") {
             Console.WriteLine($"{ident} ↳ {avatar.Name}");
         } else if (o is SkinnedMeshRenderer smr) {
             var mats = smr.Materials.Select(m => mhy1.Point(m)).ToList();
-            var shaders = mhy1.Point(mats[0].Shader);
-            Console.WriteLine($"{ident} ↳ 🎭 materials={mats} shaders={shaders} bones={smr.Bones.Count}");
+            // var shaders = mhy1.Point(mats[0].Shader);
+            foreach (var texEnv in mats.SelectMany(mat => mat.SavedProperties.TexEnvs))
+                mhy1.Point(texEnv.Value.Texture);
+            Console.WriteLine($"{ident} ↳ 🎭 materials={string.Join(", ", mats.Select(m => m.Name))} bones={smr.Bones.Count}");
         } else if (o is not Transform)
             Console.WriteLine($"{ident} ↳ {o}");
     }

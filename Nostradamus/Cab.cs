@@ -7,26 +7,25 @@ namespace Nostradamus;
 
 public class Cab {
     public readonly Dictionary<long, object> Objects;
-    private readonly List<string> Externals;
     
     public Cab(Stream stream) {
         var reader = new ObjectReader(stream);
         
-        var metadataSize = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        var fileSize = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        var version = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4)); // 21
+        /*var metadataSize =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
+        /*var fileSize =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
+        /*var version =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4)); // 21
         var dataOffset = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        var isBigEndian = reader.ReadBoolean();
-        var reserved = reader.ReadBytes(3);
-        var unityVersion = reader.ReadStringToNull();
-        var targetPlatform = reader.ReadInt32(); // 19 (StandaloneWindows64)
+        /*var isBigEndian =*/ reader.ReadBoolean();
+        /*var reserved =*/ reader.ReadBytes(3);
+        /*var unityVersion =*/ reader.ReadStringToNull();
+        /*var targetPlatform =*/ reader.ReadInt32(); // 19 (StandaloneWindows64)
 
         var enableTypeTree = reader.ReadBoolean();
         var types = reader.ReadList(_ => ReadType(reader, enableTypeTree, false));
         var objCount = reader.Align(reader.ReadInt32); // don't ask me why align, I don't know either
         var info = Range(0, objCount).ToDictionary(_ => reader.ReadInt64(), _ =>
             new ObjectInfo(dataOffset + reader.ReadUInt32(), reader.ReadUInt32(), types[reader.ReadInt32()]));
-        var scriptTypes = reader.ReadList(_ => new LocalSerializedObjectIdentifier {
+        /*var scriptTypes =*/ reader.ReadList(_ => new LocalSerializedObjectIdentifier {
             LocalSerializedFileIndex = reader.ReadInt32(),
             LocalIdentifierInFile = reader.ReadInt64()
         });
@@ -35,12 +34,13 @@ public class Cab {
             Guid = new Guid(reader.ReadBytes(16)),
             Type = reader.ReadInt32(),
             PathName = reader.ReadStringToNull()
-        });
-        var refTypes = reader.ReadList(_ => ReadType(reader, enableTypeTree, true));
-        var userInformation = reader.ReadStringToNull();
+        }).Select(e => e.PathName.Split("/").Last()).ToList();
+        /*var refTypes =*/ reader.ReadList(_ => ReadType(reader, enableTypeTree, true));
+        /*var userInformation =*/ reader.ReadStringToNull();
 
         Objects = info.ToDictionary(i => i.Key, i => ReadObject(i.Value, reader));
-        Externals = externals.Select(e => e.PathName.Split("/").Last()).ToList();
+        foreach (var pPtr in reader.Pointers)
+            pPtr.Resolve1(Objects, externals);
     }
 
     private static SerializedType ReadType(ObjectReader reader, bool enableTypeTree, bool isRefType) {
@@ -214,46 +214,19 @@ public class Cab {
             4 => Transform.Parse(reader),
             21 => new Material(reader),
             23 => new MeshRenderer(reader, o.Type.OldTypeHash),
+            28 => new Texture2D(reader),
             33 => MeshFilter.Parse(reader),
             43 => new Mesh(reader),
             48 => new Shader(reader),
             90 => new Avatar(reader),
             95 => new Animator(reader),
             // 111 => new Animation(reader),
-            114 => MonoBehaviour.Parse(reader),
-            115 => MonoScript.Parse(reader),
+            114 => new MonoBehaviour(reader),
+            115 => new MonoScript(reader),
             137 => new SkinnedMeshRenderer(reader, o.Type.OldTypeHash),
             142 => AssetBundle.Parse(reader),
             _ => $"Unknown classId:{o.Type.ClassId}"
         };
-    }
-
-    public void ResolveInternalPointers() {
-        foreach (var o in Objects.Values) {
-            if (o is Transform tt) {
-                ResolvePointer(tt.GameObject);
-                tt.Children.ForEach(ResolvePointer);
-            } else if (o is GameObject g) {
-                g.Components.ForEach(ResolvePointer);
-            } else if (o is Animator aa) {
-                ResolvePointer(aa.GameObject);
-                if (aa.AvatarPtr.PathId == 0)
-                    Console.WriteLine($"[CAB] Animator '{aa.GameObject.Val!.Name}' with no Avatar.");
-                else
-                    ResolvePointer(aa.AvatarPtr);
-            } else if (o is SkinnedMeshRenderer smr) {
-                smr.Materials.ForEach(ResolvePointer);
-            } else if (o is Material mat) {
-                ResolvePointer(mat.Shader);
-            } else if (o is AssetBundle ab) {
-                ab.PreloadTable.ForEach(ResolvePointer);
-            }
-        }
-    }
-
-    private void ResolvePointer<T>(PPtr<T> pPtr) {
-        if (pPtr.FileId == 0) pPtr.Val = (T)Objects[pPtr.PathId];
-        else pPtr.ExtPath = Externals[pPtr.FileId - 1];
     }
 }
 
@@ -266,7 +239,14 @@ public record XForm(Vector3 Translate, Quaternion Rotate, Vector3 Scale) {
 };
     
 public class ObjectReader(Stream input) : BinaryReader(input) {
-    public PPtr<T> ReadPointer<T>() => new(ReadInt32(), ReadInt64());
+    public readonly List<PPtr0> Pointers = [];
+
+    public PPtr<T> ReadPointer<T>() {
+        var ptr = new PPtr<T>(ReadInt32(), ReadInt64());
+        Pointers.Add(ptr);
+        return ptr;
+    }
+
     public T[] ReadArray<T>(Func<int,T> fn) => Range(0, ReadInt32()).Select(fn).ToArray();
     public List<T> ReadList<T>(Func<int,T> fn) => Range(0, ReadInt32()).Select(fn).ToList();
     public Vector3 ReadVector3() => new(ReadSingle(), ReadSingle(), ReadSingle());
@@ -347,9 +327,19 @@ public record FileIdentifier {
     public string PathName;
 }
 
-public record PPtr<T>(int FileId, long PathId) {
+public abstract record PPtr0(int FileId, long PathId) { // c# is dumb too
+    public abstract void Resolve1(Dictionary<long, object> objects, List<string> externals);
+}
+
+public record PPtr<T>(int FileId, long PathId) : PPtr0(FileId, PathId) { 
     public T? Val;
     public string? ExtPath;
+
+    public override void Resolve1(Dictionary<long, object> objects, List<string> externals) {
+        if (FileId != 0) ExtPath = externals[FileId - 1];
+        else if (objects.TryGetValue(PathId, out var o)) Val = (T)o;
+        else Console.WriteLine($"[CAB] '{this}' points to nothing.");
+    }
 
     public override string ToString() => $"{PathId:x16}::{Val?.ToString() ?? ExtPath ?? ""}";
 }

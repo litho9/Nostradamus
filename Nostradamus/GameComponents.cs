@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using System.Text;
+using Nostradamus.Data;
 using static System.Linq.Enumerable;
 
 namespace Nostradamus;
@@ -88,29 +89,24 @@ public sealed class Avatar(ObjectReader reader) {
     //HumanDescription m_HumanDescription 2019 and up
 }
 
-public record MonoBehaviour(PPtr<GameObject> GameObject, bool Enabled, PPtr<MonoScript> Script, string Name) {
-    public static MonoBehaviour Parse(ObjectReader r) => new (
-        r.ReadPointer<GameObject>(),
-        r.Align(r.ReadBoolean),
-        r.ReadPointer<MonoScript>(),
-        r.Align(() => Encoding.UTF8.GetString(r.ReadBytes(r.ReadInt32())))
-    );
+public class MonoBehaviour(ObjectReader r) {
+    public readonly PPtr<GameObject> GameObject = r.ReadPointer<GameObject>();
+    public readonly bool Enabled = r.Align(r.ReadBoolean);
+    public readonly PPtr<MonoScript> Script = r.ReadPointer<MonoScript>();
+    public readonly string Name = r.Align(() => Encoding.UTF8.GetString(r.ReadBytes(r.ReadInt32())));    
 }
 
-public record MonoScript(string Name, int ExecutionOrder, byte[] PropertiesHash, string ClassName, string Namespace, string AssemblyName, bool IsEditorScript) {
-    public static MonoScript Parse(ObjectReader reader) =>
-        new(reader.ReadAlignedString(),
-            reader.ReadInt32(), // 3.4 and up
-            reader.ReadBytes(16),
-            reader.ReadAlignedString(),
-            reader.ReadAlignedString(), // 3.0 and up
-            reader.ReadAlignedString(),
-            reader.ReadBoolean());
+public class MonoScript(ObjectReader reader) {
+    public readonly string Name = reader.ReadAlignedString();
+    public readonly int ExecutionOrder = reader.ReadInt32(); // 3.4 and up
+    public readonly byte[] PropertiesHash = reader.ReadBytes(16);
+    public readonly string ClassName = reader.ReadAlignedString();
+    public readonly string Namespace = reader.ReadAlignedString(); // 3.0 and up
+    public readonly string AssemblyName = reader.ReadAlignedString();
+    public readonly bool IsEditorScript = reader.ReadBoolean();
 }
 
-public record AABB(Vector3 Center, Vector3 Extent) {
-    public static AABB Parse(ObjectReader r) => new(r.ReadVector3(), r.ReadVector3());
-}
+public record AABB(Vector3 Center, Vector3 Extent);
 public class SubMesh(ObjectReader reader) {
     public uint FirstByte = reader.ReadUInt32();
     public uint IndexCount = reader.ReadUInt32();
@@ -118,7 +114,7 @@ public class SubMesh(ObjectReader reader) {
     public uint BaseVertex = reader.ReadUInt32();
     public uint FirstVertex = reader.ReadUInt32();
     public uint VertexCount = reader.ReadUInt32();
-    public AABB LocalAABB = AABB.Parse(reader);
+    public AABB LocalAABB = new(reader.ReadVector3(), reader.ReadVector3());
 }
 public class BlendShapeVertex(ObjectReader reader) {
     public Vector3 Vertex = reader.ReadVector3();
@@ -179,7 +175,7 @@ public class CompressedMesh(ObjectReader reader) {
 }
 
 public class StreamingInfo(ObjectReader reader) {
-    public long Offset = reader.ReadInt64(); // ulong
+    public uint Offset = reader.ReadUInt32();
     public uint Size = reader.ReadUInt32();
     public string Path = reader.ReadAlignedString();
 }
@@ -190,7 +186,7 @@ public sealed class Mesh {
     public BlendShapeData Shapes;
     public Matrix4x4[] BindPose;
     public uint[] BoneNameHashes;
-    private bool Use16BitIndices = true;
+    private bool Use16BitIndices;
     private uint[] IndexBuffer;
     private VertexData VertexData;
     private CompressedMesh CompressedMesh;
@@ -215,14 +211,12 @@ public sealed class Mesh {
         IndexBuffer = Use16BitIndices
             ? reader.Align(() => Range(0, reader.ReadInt32() / 2).Select(_ => (uint)reader.ReadUInt16()).ToArray())
             : Range(0, reader.ReadInt32() / 4).Select(_ => reader.ReadUInt32()).ToArray();
-
         VertexData = new VertexData(reader);
         CompressedMesh = new CompressedMesh(reader);
         reader.BaseStream.Position += 24; //AABB m_LocalAABB
-        int meshUsageFlags = reader.ReadInt32();
+        var meshUsageFlags = reader.ReadInt32();
         var bakedConvexCollisionMesh = reader.Align(() => reader.ReadBytes(reader.ReadInt32()));
         var bakedTriangleCollisionMesh = reader.Align(() => reader.ReadBytes(reader.ReadInt32()));
-
         float[] meshMetrics = [reader.ReadSingle(), reader.ReadSingle()];
         
         // if (reader.Game.Type.IsZZZ())
@@ -338,47 +332,47 @@ public class UAVParameter(ObjectReader reader) {
 }
 
 public class SerializedSubProgram {
-    public uint m_BlobIndex;
-    public ParserBindChannels m_Channels;
-    public ushort[] m_KeywordIndices;
-    public sbyte m_ShaderHardwareTier;
-    public sbyte m_GpuProgramType;
-    public List<VectorParameter> m_VectorParams;
-    public List<MatrixParameter> m_MatrixParams;
-    public List<TextureParameter> m_TextureParams;
-    public List<BufferBinding> m_BufferParams;
-    public List<ConstantBuffer> m_ConstantBuffers;
-    public List<BufferBinding> m_ConstantBufferBindings;
-    public List<UAVParameter> m_UAVParams;
-    public List<SamplerParameter> m_Samplers;
+    public uint BlobIndex;
+    public ParserBindChannels Channels;
+    public ushort[] KeywordIndices;
+    public sbyte ShaderHardwareTier;
+    public sbyte GpuProgramType;
+    public List<VectorParameter> VectorParams;
+    public List<MatrixParameter> MatrixParams;
+    public List<TextureParameter> TextureParams;
+    public List<BufferBinding> BufferParams;
+    public List<ConstantBuffer> ConstantBuffers;
+    public List<BufferBinding> ConstantBufferBindings;
+    public List<UAVParameter> UAVParams;
+    public List<SamplerParameter> Samplers;
 
     public static bool HasInstancedStructuredBuffers(SerializedType type) => type.Match("E99740711222CD922E9A6F92FF1EB07A", "B239746E4EC6E4D6D7BA27C84178610A", "3FD560648A91A99210D5DDF2BE320536");
     public static bool HasIsAdditionalBlob(SerializedType type) => type.Match("B239746E4EC6E4D6D7BA27C84178610A");
 
     public SerializedSubProgram(ObjectReader reader) {
-        m_BlobIndex = reader.ReadUInt32();
+        BlobIndex = reader.ReadUInt32();
         // if (HasIsAdditionalBlob(reader.SerializedType)) { TODO
         //     var m_IsAdditionalBlob = reader.ReadBoolean();
         //     reader.AlignStream();
         // }
 
-        m_Channels = new ParserBindChannels(reader);
+        Channels = new ParserBindChannels(reader);
 
-        var m_GlobalKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
-        var m_LocalKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
-        m_ShaderHardwareTier = reader.ReadSByte();
-        m_GpuProgramType = reader.Align(reader.ReadSByte);
+        var globalKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
+        var localKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
+        ShaderHardwareTier = reader.ReadSByte();
+        GpuProgramType = reader.Align(reader.ReadSByte);
 
-        m_VectorParams = reader.ReadList(_ => new VectorParameter(reader));
-        m_MatrixParams = reader.ReadList(_ => new MatrixParameter(reader));
-        m_TextureParams = reader.ReadList(_ => new TextureParameter(reader));
-        m_BufferParams = reader.ReadList(_ => new BufferBinding(reader));
-        m_ConstantBuffers = reader.ReadList(_ => new ConstantBuffer(reader));
-        m_ConstantBufferBindings = reader.ReadList(_ => new BufferBinding(reader));
-        m_UAVParams = reader.ReadList(_ => new UAVParameter(reader));
-        m_Samplers = reader.ReadList(_ => new SamplerParameter(reader));
+        VectorParams = reader.ReadList(_ => new VectorParameter(reader));
+        MatrixParams = reader.ReadList(_ => new MatrixParameter(reader));
+        TextureParams = reader.ReadList(_ => new TextureParameter(reader));
+        BufferParams = reader.ReadList(_ => new BufferBinding(reader));
+        ConstantBuffers = reader.ReadList(_ => new ConstantBuffer(reader));
+        ConstantBufferBindings = reader.ReadList(_ => new BufferBinding(reader));
+        UAVParams = reader.ReadList(_ => new UAVParameter(reader));
+        Samplers = reader.ReadList(_ => new SamplerParameter(reader));
 
-        var m_ShaderRequirements = reader.ReadInt32();
+        var shaderRequirements = reader.ReadInt32();
 
         // if (HasInstancedStructuredBuffers(reader.SerializedType)) { TODO
         //     int numInstancedStructuredBuffers = reader.ReadInt32();
@@ -581,18 +575,68 @@ public abstract class Texture {
     }
 }
 
+public class GLTextureSettings(ObjectReader reader) {
+    public readonly int FilterMode = reader.ReadInt32();
+    public readonly int Aniso = reader.ReadInt32();
+    public readonly float MipBias = reader.ReadSingle();
+    public readonly int WrapMode = reader.ReadInt32(); //m_WrapU
+    public readonly int WrapV = reader.ReadInt32();
+    public readonly int WrapW = reader.ReadInt32();
+}
+
+public class Texture2D : Texture {
+    public readonly int Width;
+    public readonly int Height;
+    public readonly TextureFormat Format;
+    public bool m_MipMap;
+    public int m_MipCount;
+    public GLTextureSettings Settings;
+    public StreamingInfo m_StreamData;
+    public byte[] Data;
+
+    public Texture2D(ObjectReader reader) : base(reader) {
+        Width = reader.ReadInt32();
+        Height = reader.ReadInt32();
+        var m_CompleteImageSize = reader.ReadInt32();
+        Format = (TextureFormat)reader.ReadInt32();
+        m_MipCount = reader.ReadInt32();
+        var m_IsReadable = reader.ReadBoolean(); //2.6.0 and up
+        var m_IsPreProcessed = reader.ReadBoolean(); // 2020.1 and up OR ZZZ
+        var m_IgnoreMasterTextureLimit = reader.ReadBoolean(); // 2019.3 and up
+        var m_StreamingMipmaps = reader.Align(reader.ReadBoolean); // 2018.2 and up
+        var m_StreamingMipmapsPriority = reader.ReadInt32(); //2018.2 and up
+        var m_IsCompressed = reader.Align(reader.ReadBoolean); // is ZZZ
+        var m_ImageCount = reader.ReadInt32();
+        var m_TextureDimension = reader.ReadInt32();
+        Settings = new GLTextureSettings(reader);
+        var m_LightmapFormat = reader.ReadInt32(); //3.0 and up
+        var m_ColorSpace = reader.ReadInt32(); //3.5.0 and up
+        var image_data_size = reader.ReadInt32();
+        if (image_data_size == 0) { // && 5.3.0 and up
+            var m_ExternalMipRelativeIndex = reader.ReadUInt32(); // is ZZZ
+            m_StreamData = new StreamingInfo(reader);
+        } else {
+            Data = reader.ReadBytes(image_data_size);
+        }
+    }
+    
+    public override string ToString() => $"{Name} [{Width}x{Height}][{Format}]";
+}
+
 public class UnityTexEnv(ObjectReader reader) {
-    public PPtr<Texture> Texture = reader.ReadPointer<Texture>();
-    public Vector2 Scale = reader.ReadVector2();
-    public Vector2 Offset = reader.ReadVector2();
+    public readonly PPtr<Texture> Texture = reader.ReadPointer<Texture>();
+    public readonly Vector2 Scale = reader.ReadVector2();
+    public readonly Vector2 Offset = reader.ReadVector2();
+    
+    public override string ToString() => Texture.ToString();
 }
 
 public record Color4(float R, float G, float B, float A);
 
 public record UnityPropertySheet {
-    public Dictionary<string, UnityTexEnv> TexEnvs;
-    public Dictionary<string, float> Floats;
-    public List<(string, Color4)> Colors;
+    public readonly Dictionary<string, UnityTexEnv> TexEnvs;
+    public readonly Dictionary<string, float> Floats;
+    public readonly List<(string, Color4)> Colors;
 
     public UnityPropertySheet(ObjectReader r) {
         TexEnvs = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => new UnityTexEnv(r));
@@ -602,10 +646,10 @@ public record UnityPropertySheet {
     }
 }
 
-public sealed class Material {
+public class Material {
     public readonly string Name;
     public readonly PPtr<Shader> Shader;
-    public UnityPropertySheet SavedProperties;
+    public readonly UnityPropertySheet SavedProperties;
 
     public Material(ObjectReader reader) {
         Name = reader.ReadAlignedString();
@@ -622,6 +666,8 @@ public sealed class Material {
         var enabledPassMask = reader.ReadUInt32(); // reader.Game.Type.IsZZZ() && HasEnabledPassMask(reader.SerializedType)
         SavedProperties = new UnityPropertySheet(reader);
     }
+    
+    public override string ToString() => Name;
 }
 
 public abstract record Renderer {
@@ -632,34 +678,34 @@ public abstract record Renderer {
 
     protected Renderer(ObjectReader reader, byte[] oldTypeHash) {
         GameObject = reader.ReadPointer<GameObject>();
-        var flags1 = reader.ReadInt32(); // enabled castShadows receiveShadows dynamicOccludee
-        var flags2 = reader.ReadInt32(); // motionVectors lightProbeUsage reflectionProbeUsage rayTracingMode
-        var rayTraceProcedural = reader.Align(reader.ReadByte);
-        var renderingLayerMask = reader.ReadUInt32();
-        var rendererPriority = reader.ReadInt32();
+        /*var flags1 =*/ reader.ReadInt32(); // enabled castShadows receiveShadows dynamicOccludee
+        /*var flags2 =*/ reader.ReadInt32(); // motionVectors lightProbeUsage reflectionProbeUsage rayTracingMode
+        /*var rayTraceProcedural =*/ reader.Align(reader.ReadByte);
+        /*var renderingLayerMask =*/ reader.ReadUInt32();
+        /*var rendererPriority =*/ reader.ReadInt32();
 
-        var lightmapIndex = reader.ReadUInt16();
-        var lightmapIndexDynamic = reader.ReadUInt16();
-        var lightmapTilingOffset = reader.ReadVector4();
-        var lightmapTilingOffsetDynamic = reader.ReadVector4();
+        /*var lightmapIndex =*/ reader.ReadUInt16();
+        /*var lightmapIndexDynamic =*/ reader.ReadUInt16();
+        /*var lightmapTilingOffset =*/ reader.ReadVector4();
+        /*var lightmapTilingOffsetDynamic =*/ reader.ReadVector4();
 
         Materials = reader.ReadList(_ => reader.ReadPointer<Material>());
-        var staticBatchFirstSubMesh = reader.ReadUInt16();
-        var staticBatchSubMeshCount = reader.ReadUInt16();
-        var staticBatchRoot = reader.ReadPointer<Transform>();
+        /*var staticBatchFirstSubMesh =*/ reader.ReadUInt16();
+        /*var staticBatchSubMeshCount =*/ reader.ReadUInt16();
+        /*var staticBatchRoot =*/ reader.ReadPointer<Transform>();
 
-        var probeAnchor = reader.ReadPointer<Transform>();
-        var lightProbeVolumeOverride = reader.ReadPointer<GameObject>();
+        /*var probeAnchor =*/ reader.ReadPointer<Transform>();
+        /*var lightProbeVolumeOverride =*/ reader.ReadPointer<GameObject>();
 
-        var sortingLayerId = reader.ReadUInt32();
-        var sortingOrder = reader.Align(reader.ReadInt16);
+        /*var sortingLayerId =*/ reader.ReadUInt32();
+        /*var sortingOrder =*/ reader.Align(reader.ReadInt16);
 
         // if (reader.Game.Type.IsZZZ())
-        var needHizCulling = reader.ReadBoolean();
-        var highShadingRate = reader.ReadBoolean();
-        var rayTracingLayerMask = reader.Align(reader.ReadBoolean);
+        /*var needHizCulling =*/ reader.ReadBoolean();
+        /*var highShadingRate =*/ reader.ReadBoolean();
+        /*var rayTracingLayerMask =*/ reader.Align(reader.ReadBoolean);
         if (HasCullingDistance(oldTypeHash)) {
-            var cullingDistance = reader.ReadSingle();
+            /*var cullingDistance =*/ reader.ReadSingle();
         }
     }
 }
@@ -683,7 +729,7 @@ public record SkinnedMeshRenderer : Renderer {
 
         // if (reader.Game.Type.IsGIGroup() || reader.Game.Type.IsZZZ()) {
         RootBone = reader.ReadPointer<Transform>();
-        MAabb = AABB.Parse(reader);
+        MAabb = new AABB(reader.ReadVector3(), reader.ReadVector3());
         MDirtyAabb = reader.Align(reader.ReadBoolean);
     }
 }

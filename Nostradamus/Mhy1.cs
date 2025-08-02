@@ -45,7 +45,6 @@ public class Mhy1(string dir) {
                 cabs.Add(node.Path, new Cab(blocksStream));
             }
         }
-        foreach (var cab in cabs.Values) cab.ResolveInternalPointers();
         Blocks.Add(blockName, cabs);
         return cabs;
     }
@@ -62,7 +61,7 @@ public class Mhy1(string dir) {
                     foreach (var n in nodes) _cabMap.TryAdd(n.Path, file.FullName);
                     stream.Position += blocks.Sum(x => x.CompressedSize);
                 }
-            } catch (Exception ex) {
+            } catch (Exception) {
                 Console.WriteLine($"Error loading {file.Name}");
             }
         });
@@ -80,7 +79,7 @@ public class Mhy1(string dir) {
         return (T)pPtr.Val!;
     }
 
-    private (List<DirNode>, List<StorageBlock>) ReadMhy1Headers(BinaryReader reader) {
+    private static (List<DirNode>, List<StorageBlock>) ReadMhy1Headers(BinaryReader reader) {
         if (!reader.ReadBytes(4).SequenceEqual("mhy1"u8.ToArray()))
             throw new Exception("File does not begin with 'mhy1'.");
         var compressed = reader.ReadBytes((int)reader.ReadUInt32());
