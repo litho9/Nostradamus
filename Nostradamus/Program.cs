@@ -19,7 +19,7 @@ var blk2 = mhy1.LoadBlock(path0 + "2299538835.blk"); // SeparateMesh_Avatar_Fema
 var cab2 = blk2["CAB-cd0a7c1addc386d573a202aad65e4aff"];
 Console.WriteLine($"blk processed in {watch.ElapsedMilliseconds}ms.");
 
-var root = (Transform)cab0.Objects.Values.Single(o => o is Transform { Father.PathId: 0 });
+var root = (Transform)cab0.Values.Single(o => o is Transform { Father.PathId: 0 });
 PrintCab(root);
 watch.Stop();
 Console.WriteLine($"Execution finished in {watch.ElapsedMilliseconds}ms.");
