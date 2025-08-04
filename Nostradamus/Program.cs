@@ -36,7 +36,7 @@ void PrintCab(Transform t, string ident="") {
         } else if (o is SkinnedMeshRenderer smr) {
             var mats = smr.Materials.Select(m => mhy1.Point(m)).ToList();
             // var shaders = mhy1.Point(mats[0].Shader);
-            foreach (var texEnv in mats.SelectMany(mat => mat.SavedProperties.TexEnvs))
+            foreach (var texEnv in mats.SelectMany(mat => mat.TexEnvs))
                 mhy1.Point(texEnv.Value.Texture);
             Console.WriteLine($"{ident} ↳ 🎭 materials={string.Join(", ", mats.Select(m => m.Name))} bones={smr.Bones.Count}");
         } else if (o is not Transform)

@@ -7,8 +7,10 @@ using static Nostradamus.Descrambelhador;
 namespace Nostradamus;
 
 public class Mhy1(string dir) {
-    public readonly Dictionary<string, Dictionary<string, Dictionary<long, object>>> Blocks = new(); // blkName↝cabName↝pathId↝gameComponent
+    private readonly Dictionary<string, Dictionary<string, Dictionary<long, object>>> Blocks = new(); // blkName↝cabName↝pathId↝gameComponent
     private readonly ConcurrentDictionary<string, string> _cabMap = new(); // cabName↝blkName
+
+    // public Mhy1(string dir) { LoadCabMap(dir); }
 
     public Dictionary<string, Dictionary<long, object>> LoadBlock(string blockName) {
         Dictionary<string, Dictionary<long, object>> cabs = new();
@@ -16,11 +18,6 @@ public class Mhy1(string dir) {
         var reader = new ObjectReader(stream);
         while (stream.Position < stream.Length) {
             var (nodes, blocks) = ReadMhy1Headers(reader);
-            if (nodes.Count == 0) {
-                Console.WriteLine($"[MHY1] skipping block {stream.Position:x8}.");
-                stream.Position += blocks.Sum(x => x.CompressedSize);
-                continue;
-            }
 
             var blocksStream = new MemoryStream(blocks.Sum(x => x.UncompressedSize));
             foreach (var (compressedSize, uncompressedSize) in blocks) {
@@ -33,27 +30,18 @@ public class Mhy1(string dir) {
                 ArrayPool<byte>.Shared.Return(compressed);
                 ArrayPool<byte>.Shared.Return(uncompressed);
             }
-
-            foreach (var node in nodes) {
-                var fileStr = $"{blockName.Split("\\").Last()}[{stream.Position:x8}]";
-                if (node.Path.EndsWith("resS")) {
-                    Console.WriteLine($"[NHY1] Skipping {node.Path} in {fileStr}.");
-                    continue;
-                }
-                Console.WriteLine($"[MHY1] Processing {node.Path} in {fileStr}.");
+            var blocksReader = new ObjectReader(blocksStream);
+            foreach (var node in nodes.Where(node => !node.Path.EndsWith("resS"))) {
                 blocksStream.Position = node.Offset;
-                var objects = ReadCab(blocksStream);
-                cabs.Add(node.Path, objects);
+                cabs.Add(node.Path, ReadCab(blocksReader));
             }
         }
         Blocks.Add(blockName, cabs);
         return cabs;
     }
 
-    public ConcurrentDictionary<string, string> LoadCabMap() {
-        var d = new DirectoryInfo(dir);
-        var files = d.GetFiles("*.blk");
-        Parallel.ForEach(files, file => {
+    private void LoadCabMap() {
+        Parallel.ForEach(new DirectoryInfo(dir).GetFiles("*.blk"), file => {
             try {
                 var stream = File.Open(file.FullName, FileMode.Open, FileAccess.Read);
                 var reader = new ObjectReader(stream);
@@ -66,7 +54,6 @@ public class Mhy1(string dir) {
                 Console.WriteLine($"Error loading {file.Name}");
             }
         });
-        return _cabMap;
     }
     
     public T Point<T>(PPtr<T> pPtr) {
@@ -98,15 +85,12 @@ public class Mhy1(string dir) {
         return (nodes, blocks);
     }
     
-    public static Dictionary<long, object> ReadCab(Stream stream) {
-        var reader = new ObjectReader(stream);
-        
+    private static Dictionary<long, object> ReadCab(ObjectReader reader) {
         /*var metadataSize =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
         /*var fileSize =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
         /*var version =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4)); // 21
         var dataOffset = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        /*var isBigEndian =*/ reader.ReadBoolean();
-        /*var reserved =*/ reader.ReadBytes(3);
+        /*var isBigEndian =*/ reader.Align(reader.ReadBoolean);
         /*var unityVersion =*/ reader.ReadStringToNull();
         /*var targetPlatform =*/ reader.ReadInt32(); // 19 (StandaloneWindows64)
 
@@ -115,10 +99,8 @@ public class Mhy1(string dir) {
         var objCount = reader.Align(reader.ReadInt32); // don't ask me why align, I don't know either
         var info = Range(0, objCount).ToDictionary(_ => reader.ReadInt64(), _ =>
             new ObjectInfo(dataOffset + reader.ReadUInt32(), reader.ReadUInt32(), types[reader.ReadInt32()]));
-        /*var scriptTypes =*/ reader.ReadList(_ => new LocalSerializedObjectIdentifier {
-            LocalSerializedFileIndex = reader.ReadInt32(),
-            LocalIdentifierInFile = reader.ReadInt64()
-        });
+        /*var scriptTypes =*/ reader.ReadList(_ => new LocalSerializedObjectIdentifier(
+            reader.ReadInt32(), reader.ReadInt64()));
         var externals = reader.ReadList(_ => new FileIdentifier {
             TempEmpty = reader.ReadStringToNull(),
             Guid = new Guid(reader.ReadBytes(16)),
@@ -146,17 +128,10 @@ public class Mhy1(string dir) {
                 
         var numberOfNodes = reader.ReadInt32();
         /*var stringBufferSize =*/ reader.ReadInt32();
-        type.Nodes = Range(0, numberOfNodes).Select(_ => new TypeTreeNode {
-            Version = reader.ReadUInt16(),
-            Level = reader.ReadByte(),
-            TypeFlags = reader.ReadByte(),
-            TypeStrOffset = reader.ReadUInt32(),
-            NameStrOffset = reader.ReadUInt32(),
-            ByteSize = reader.ReadInt32(),
-            Index = reader.ReadInt32(),
-            MetaFlag = reader.ReadInt32(),
-            RefTypeHash = reader.ReadUInt64() // >=19
-        }).ToList();
+        type.Nodes = Range(0, numberOfNodes).Select(_ => new TypeTreeNode(reader.ReadUInt16(),
+            reader.ReadByte(), reader.ReadByte(), reader.ReadUInt32(), reader.ReadUInt32(),
+            reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadUInt64() // >=19
+        )).ToList();
         foreach (var node in type.Nodes) {
             node.Type = ReadString(reader, node.TypeStrOffset);
             node.Name = ReadString(reader, node.NameStrOffset);
@@ -190,7 +165,7 @@ public class Mhy1(string dir) {
             28 => new Texture2D(reader),
             33 => MeshFilter.Parse(reader),
             43 => new Mesh(reader),
-            // 48 => new Shader(reader),
+            48 => new Shader(reader, o.Type.OldTypeHash),
             90 => new Avatar(reader),
             95 => new Animator(reader),
             // 111 => new Animation(reader),
@@ -221,26 +196,16 @@ public record SerializedType {
     public bool Match(params string[] hashes) => hashes.Any(x => x == Convert.ToHexString(OldTypeHash));
 }
 
-public class TypeTreeNode {
-    public string Type;
-    public string Name;
-    public int ByteSize;
-    public int Index;
-    public int TypeFlags; //m_IsArray
-    public int Version;
-    public int MetaFlag;
-    public int Level;
-    public uint TypeStrOffset;
-    public uint NameStrOffset;
-    public ulong RefTypeHash;
+public record TypeTreeNode(int Version, int Level, int TypeFlags, //m_IsArray
+        uint TypeStrOffset, uint NameStrOffset,
+        int ByteSize, int Index, int MetaFlag, ulong RefTypeHash) {
+    public string Type = "";
+    public string Name = "";
 }
 
 public record ObjectInfo(long ByteStart, uint ByteSize, SerializedType Type);
 
-public class LocalSerializedObjectIdentifier {
-    public int LocalSerializedFileIndex;
-    public long LocalIdentifierInFile;
-}
+public record LocalSerializedObjectIdentifier(int FileIndex, long IdInFile);
 
 public record FileIdentifier {
     public string TempEmpty;

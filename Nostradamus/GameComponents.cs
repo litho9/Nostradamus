@@ -238,15 +238,26 @@ public sealed class Mesh {
     }
 }
 
-public class SerializedProperty(ObjectReader reader) {
-    public string Name = reader.ReadAlignedString();
-    public string Description = reader.ReadAlignedString();
-    public string[] Attributes = reader.ReadArray(_ => reader.ReadAlignedString());
-    public int Type = reader.ReadInt32(); // SerializedPropertyType
-    public uint Flags = reader.ReadUInt32(); // SerializedPropertyFlag
-    public Matrix4x4 DefValue = reader.ReadMatrix4X4();
-    public string DefaultName = reader.ReadAlignedString();
-    public int TexDim = reader.ReadInt32(); // TextureDimension
+public class SerializedProperty {
+    public string Name;
+    public string Description;
+    public string[] Attributes;
+    public int Type; // SerializedPropertyType
+    public uint Flags; // SerializedPropertyFlag
+    public float[] DefValue;
+    public string DefaultName;
+    public int TexDim; // TextureDimension
+
+    public SerializedProperty(ObjectReader reader) {
+        Name = reader.ReadAlignedString();
+        Description = reader.ReadAlignedString();
+        Attributes = reader.ReadArray(_ => reader.ReadAlignedString());
+        Type = reader.ReadInt32();
+        Flags = reader.ReadUInt32();
+        DefValue = Range(0, 4).Select(_ => reader.ReadSingle()).ToArray();
+        DefaultName = reader.ReadAlignedString();
+        TexDim = reader.ReadInt32();
+    }
 }
 
 public class ShaderBindChannel(ObjectReader reader) {
@@ -346,22 +357,26 @@ public class SerializedSubProgram {
     public List<UAVParameter> UAVParams;
     public List<SamplerParameter> Samplers;
 
-    public static bool HasInstancedStructuredBuffers(SerializedType type) => type.Match("E99740711222CD922E9A6F92FF1EB07A", "B239746E4EC6E4D6D7BA27C84178610A", "3FD560648A91A99210D5DDF2BE320536");
-    public static bool HasIsAdditionalBlob(SerializedType type) => type.Match("B239746E4EC6E4D6D7BA27C84178610A");
+    private static bool HasInstancedStructuredBuffers(byte[] type) => ((string[])["E99740711222CD922E9A6F92FF1EB07A", "B239746E4EC6E4D6D7BA27C84178610A", "3FD560648A91A99210D5DDF2BE320536"
+    ]).Any(t => t == Convert.ToHexString(type));
+    private static bool HasIsAdditionalBlob(byte[] type) => "B239746E4EC6E4D6D7BA27C84178610A" == Convert.ToHexString(type);
+    private static bool HasProgramHash(byte[] type) => "66839B5040F09A101A02DDDC9E522F23" == Convert.ToHexString(type) || "0B07D09734C07EBABF387D3CBC8BEBF0" == Convert.ToHexString(type);
 
-    public SerializedSubProgram(ObjectReader reader) {
+    public SerializedSubProgram(ObjectReader reader, byte[] oldTypeHash) {
         BlobIndex = reader.ReadUInt32();
-        // if (HasIsAdditionalBlob(reader.SerializedType)) { TODO
-        //     var m_IsAdditionalBlob = reader.ReadBoolean();
-        //     reader.AlignStream();
-        // }
+        if (HasIsAdditionalBlob(oldTypeHash)) 
+            /*var m_IsAdditionalBlob =*/ reader.Align(reader.ReadBoolean);
+        if (HasProgramHash(oldTypeHash)) {
+            /*var m_ProgramHash =*/ reader.ReadBytes(16);
+            /*var m_DependentBlobIndex =*/ reader.ReadInt32();
+        }
 
         Channels = new ParserBindChannels(reader);
 
-        var globalKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
-        var localKeywordIndices = reader.Align(() => reader.ReadArray(_ => reader.ReadUInt16()));
+        var globalKeywordIndices = reader.Align(reader.ReadArray(reader.ReadUInt16)); //2019 ~2021.1
+        var localKeywordIndices = reader.Align(reader.ReadArray(reader.ReadUInt16)); //2019 ~2021.1
         ShaderHardwareTier = reader.ReadSByte();
-        GpuProgramType = reader.Align(reader.ReadSByte);
+        GpuProgramType = reader.Align(reader.ReadSByte());
 
         VectorParams = reader.ReadList(_ => new VectorParameter(reader));
         MatrixParams = reader.ReadList(_ => new MatrixParameter(reader));
@@ -373,19 +388,9 @@ public class SerializedSubProgram {
         Samplers = reader.ReadList(_ => new SamplerParameter(reader));
 
         var shaderRequirements = reader.ReadInt32();
-
-        // if (HasInstancedStructuredBuffers(reader.SerializedType)) { TODO
-        //     int numInstancedStructuredBuffers = reader.ReadInt32();
-        //     var m_InstancedStructuredBuffers = new List<ConstantBuffer>();
-        //     for (int i = 0; i < numInstancedStructuredBuffers; i++) {
-        //         m_InstancedStructuredBuffers.Add(new ConstantBuffer(reader));
-        //     }
-        // }
+        if (HasInstancedStructuredBuffers(oldTypeHash))
+            /*var m_InstancedStructuredBuffers =*/ reader.ReadList(_ => new ConstantBuffer(reader));
     }
-}
-
-public class SerializedProgram(ObjectReader reader) {
-    public List<SerializedSubProgram> SubPrograms = reader.ReadList(_ => new SerializedSubProgram(reader));
 }
 
 public class SerializedShaderFloatValue(ObjectReader reader) {
@@ -483,30 +488,30 @@ public class SerializedPass {
         public int Type; // { Normal = 0, Use = 1, Grab = 2 }
         public SerializedShaderState State;
         public uint ProgramMask;
-        public SerializedProgram ProgVertex;
-        public SerializedProgram ProgFragment;
-        public SerializedProgram ProgGeometry;
-        public SerializedProgram ProgHull;
-        public SerializedProgram ProgDomain;
-        public SerializedProgram ProgRayTracing;
+        public List<SerializedSubProgram> ProgVertex;
+        public List<SerializedSubProgram> ProgFragment;
+        public List<SerializedSubProgram> ProgGeometry;
+        public List<SerializedSubProgram> ProgHull;
+        public List<SerializedSubProgram> ProgDomain;
+        public List<SerializedSubProgram> ProgRayTracing;
         public bool HasInstancingVariant;
         public string UseName;
         public string Name;
         public string TextureName;
         public Dictionary<string, string> Tags;
 
-        public SerializedPass(ObjectReader reader) {
+        public SerializedPass(ObjectReader reader, byte[] oldTypeHash) {
             NameIndices = Range(0, reader.ReadInt32())
                 .ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadInt32());
             Type = reader.ReadInt32();
             State = new SerializedShaderState(reader);
             ProgramMask = reader.ReadUInt32();
-            ProgVertex = new SerializedProgram(reader);
-            ProgFragment = new SerializedProgram(reader);
-            ProgGeometry = new SerializedProgram(reader);
-            ProgHull = new SerializedProgram(reader);
-            ProgDomain = new SerializedProgram(reader);
-            ProgRayTracing = new SerializedProgram(reader);
+            ProgVertex = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+            ProgFragment = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+            ProgGeometry = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+            ProgHull = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+            ProgDomain = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+            ProgRayTracing = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
             HasInstancingVariant = reader.ReadBoolean();
             var hasProceduralInstancingVariant = reader.ReadInt32() > 0;
             UseName = reader.ReadAlignedString();
@@ -517,8 +522,8 @@ public class SerializedPass {
         }
     }
 
-public class SerializedSubShader(ObjectReader reader) {
-    public List<SerializedPass> Passes = reader.ReadList(_ => new SerializedPass(reader));
+public class SerializedSubShader(ObjectReader reader, byte[] oldTypeHash) {
+    public List<SerializedPass> Passes = reader.ReadList(_ => new SerializedPass(reader, oldTypeHash));
     public Dictionary<string, string> Tags = Range(0, reader.ReadInt32())
         .ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadAlignedString());
     public int LOD = reader.ReadInt32();
@@ -529,45 +534,31 @@ public class SerializedShaderDependency(ObjectReader reader) {
     public string To = reader.ReadAlignedString();
 }
 
-public class SerializedShader(ObjectReader reader) {
+public class Shader(ObjectReader reader, byte[] oldTypeHash) {
+    public readonly string Name = reader.ReadAlignedString();
+
     public List<SerializedProperty> Props = reader.ReadList(_ => new SerializedProperty(reader));
-    public List<SerializedSubShader> SubShaders = reader.ReadList(_ => new SerializedSubShader(reader));
-    public string Name = reader.ReadAlignedString();
+    public List<SerializedSubShader> SubShaders = reader.ReadList(_ => new SerializedSubShader(reader, oldTypeHash));
+    public string SerializedName = reader.ReadAlignedString();
     public string CustomEditorName = reader.ReadAlignedString();
     public string FallbackName = reader.ReadAlignedString();
-    public List<SerializedShaderDependency> Dependencies = reader.ReadList(_ => new SerializedShaderDependency(reader));
+    public List<SerializedShaderDependency> SerializedDeps = reader.ReadList(_ => new SerializedShaderDependency(reader));
     public bool DisableNoSubshadersMessage = reader.Align(reader.ReadBoolean);
-}
 
-public class Shader {
-    public readonly string Name;
-    
-    public SerializedShader ParsedForm;
-    public uint[] Platforms;
-    public uint[][] Offsets;
-    public uint[][] CompressedLengths;
-    public uint[][] DecompressedLengths;
-    public byte[] CompressedBlob;
-
-    public Shader(ObjectReader reader) {
-        Name = reader.ReadAlignedString();
-        
-        ParsedForm = new SerializedShader(reader);
-        Platforms = reader.ReadArray(_ => reader.ReadUInt32());
-        Offsets = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
-        CompressedLengths = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
-        DecompressedLengths = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
-        CompressedBlob = reader.ReadBytes(reader.ReadInt32());
-        var dependencies = reader.ReadArray(_ => reader.ReadPointer<Shader>());
-        var nonModifiableTextures = Range(0, reader.ReadInt32())
-            .ToDictionary(_=> reader.ReadAlignedString(), _ => reader.ReadPointer<Texture>());
-        var shaderIsBaked = reader.Align(reader.ReadBoolean);
-    }
+    public uint[] Platforms = reader.ReadArray(_ => reader.ReadUInt32());
+    public uint[][] Offsets = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
+    public uint[][] CompressedLengths = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
+    public uint[][] DecompressedLengths = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
+    public byte[] CompressedBlob = reader.ReadBytes(reader.ReadInt32());
+    public PPtr<Shader>[] Dependencies = reader.ReadArray(_ => reader.ReadPointer<Shader>());
+    public Dictionary<string, PPtr<Texture>> NonModifiableTextures = Range(0, reader.ReadInt32())
+        .ToDictionary(_=> reader.ReadAlignedString(), _ => reader.ReadPointer<Texture>());
+    public bool ShaderIsBaked = reader.Align(reader.ReadBoolean);
 }
 
 public abstract class Texture {
     public readonly string Name;
-    
+
     protected Texture(ObjectReader reader) {
         Name = reader.ReadAlignedString();
         var forcedFallbackFormat = reader.ReadInt32();
@@ -619,7 +610,7 @@ public class Texture2D : Texture {
             Data = reader.ReadBytes(image_data_size);
         }
     }
-    
+
     public override string ToString() => $"{Name} [{Width}x{Height}][{Format}]";
 }
 
@@ -627,52 +618,36 @@ public class UnityTexEnv(ObjectReader reader) {
     public readonly PPtr<Texture> Texture = reader.ReadPointer<Texture>();
     public readonly Vector2 Scale = reader.ReadVector2();
     public readonly Vector2 Offset = reader.ReadVector2();
-    
+
     public override string ToString() => Texture.ToString();
 }
 
 public record Color4(float R, float G, float B, float A);
 
-public record UnityPropertySheet {
-    public readonly Dictionary<string, UnityTexEnv> TexEnvs;
-    public readonly Dictionary<string, float> Floats;
-    public readonly List<(string, Color4)> Colors;
+public class Material(ObjectReader r) {
+    public readonly string Name = r.ReadAlignedString();
+    public readonly PPtr<Shader> Shader = r.ReadPointer<Shader>();
+    public readonly string ShaderKeywords = r.ReadAlignedString();
+    public readonly uint LightmapFlags = r.ReadUInt32();
+    public readonly bool EnableInstancingVariants = r.ReadBoolean();
+    public readonly bool DoubleSidedGI = r.ReadBoolean(); //2017 and up
+    public readonly bool HighShadingRate = r.Align(r.ReadBoolean); //ZZZ
+    public readonly int CustomRenderQueue = r.ReadInt32();
+    public readonly Dictionary<string, string> Tags = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => r.ReadAlignedString());
+    public readonly string[] DisabledShaderPasses = r.ReadArray(_ => r.ReadAlignedString());
+    public readonly uint EnabledPassMask = r.ReadUInt32(); // reader.Game.Type.IsZZZ() && HasEnabledPassMask(reader.SerializedType)
 
-    public UnityPropertySheet(ObjectReader r) {
-        TexEnvs = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => new UnityTexEnv(r));
-        Floats = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => r.ReadSingle());
-        Colors = r.ReadList(_ => (r.ReadAlignedString(), 
-            new Color4(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle())));
-    }
-}
+    public readonly Dictionary<string, UnityTexEnv> TexEnvs = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => new UnityTexEnv(r));
+    public readonly Dictionary<string, float> Floats = Range(0, r.ReadInt32()).ToDictionary(_ => r.ReadAlignedString(), _ => r.ReadSingle());
+    public readonly List<(string, Color4)> Colors = r.ReadList(_ => (r.ReadAlignedString(),
+        new Color4(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle())));
 
-public class Material {
-    public readonly string Name;
-    public readonly PPtr<Shader> Shader;
-    public readonly UnityPropertySheet SavedProperties;
-
-    public Material(ObjectReader reader) {
-        Name = reader.ReadAlignedString();
-        Shader = reader.ReadPointer<Shader>();
-        var shaderKeywords = reader.ReadAlignedString();
-        var lightmapFlags = reader.ReadUInt32();
-        var enableInstancingVariants = reader.ReadBoolean();
-        var doubleSidedGI = reader.ReadBoolean(); //2017 and up
-        var highShadingRate = reader.Align(reader.ReadBoolean); //ZZZ
-
-        var customRenderQueue = reader.ReadInt32();
-        var tags = Range(0, reader.ReadInt32()).ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadAlignedString());
-        var disabledShaderPasses = reader.ReadArray(_ => reader.ReadAlignedString());
-        var enabledPassMask = reader.ReadUInt32(); // reader.Game.Type.IsZZZ() && HasEnabledPassMask(reader.SerializedType)
-        SavedProperties = new UnityPropertySheet(reader);
-    }
-    
     public override string ToString() => Name;
 }
 
 public abstract record Renderer {
     private static bool HasCullingDistance(byte[] hash) => "BFA28DBFE9993C2ABE21B3408666CFD3" == Convert.ToHexString(hash);
-    
+
     public readonly PPtr<GameObject> GameObject;
     public readonly List<PPtr<Material>> Materials;
 

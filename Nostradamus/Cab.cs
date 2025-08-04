@@ -21,7 +21,9 @@ public class ObjectReader(Stream input) : BinaryReader(input) {
     }
 
     public T[] ReadArray<T>(Func<int,T> fn) => Range(0, ReadInt32()).Select(fn).ToArray();
+    public T[] ReadArray<T>(Func<T> fn) => Range(0, ReadInt32()).Select(_ => fn()).ToArray();
     public List<T> ReadList<T>(Func<int,T> fn) => Range(0, ReadInt32()).Select(fn).ToList();
+    public List<T> ReadList<T>(Func<T> fn) => Range(0, ReadInt32()).Select(_ => fn()).ToList();
     public Vector3 ReadVector3() => new(ReadSingle(), ReadSingle(), ReadSingle());
     public Vector4 ReadVector4() => new(ReadSingle(), ReadSingle(), ReadSingle(), ReadSingle());
     public Quaternion ReadQuaternion() => new(ReadSingle(), ReadSingle(), ReadSingle(), ReadSingle());
@@ -38,13 +40,12 @@ public class ObjectReader(Stream input) : BinaryReader(input) {
     public string ReadStringToNull() => Encoding.UTF8.GetString(BytesToNull().ToArray());
     public string ReadAlignedString() => Align(() => Encoding.UTF8.GetString(ReadBytes(ReadInt32())));
 
-    public T Align<T>(Func<T> fn, int alignment = 4) {
-        var ret = fn();
+    public T Align<T>(T ret, int alignment = 4) {
         var mod = BaseStream.Position % alignment;
         if (mod != 0) BaseStream.Position += alignment - mod;
         return ret;
     }
-    
+    public T Align<T>(Func<T> fn, int alignment = 4) => Align(fn(), alignment);
     public int ReadMhyInt() => ReadMhyInt(ReadBytes(6));
     private static int ReadMhyInt(byte[] buffer) =>
         buffer[2] | (buffer[4] << 8) | (buffer[0] << 0x10) | (buffer[5] << 0x18);
