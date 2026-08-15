@@ -88,14 +88,14 @@ public class Mhy1(string dir) {
     private static Dictionary<long, object> ReadCab(ObjectReader reader) {
         /*var metadataSize =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
         /*var fileSize =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        /*var version =*/ BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4)); // 21
+        var version = (int)BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4)); // 21
         var dataOffset = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
         /*var isBigEndian =*/ reader.Align(reader.ReadBoolean);
         /*var unityVersion =*/ reader.ReadStringToNull();
         /*var targetPlatform =*/ reader.ReadInt32(); // 19 (StandaloneWindows64)
 
         var enableTypeTree = reader.ReadBoolean();
-        var types = reader.ReadList(_ => ReadType(reader, enableTypeTree, false));
+        var types = reader.ReadList(_ => ReadType(reader, enableTypeTree, false, version));
         var objCount = reader.Align(reader.ReadInt32); // don't ask me why align, I don't know either
         var info = Range(0, objCount).ToDictionary(_ => reader.ReadInt64(), _ =>
             new ObjectInfo(dataOffset + reader.ReadUInt32(), reader.ReadUInt32(), types[reader.ReadInt32()]));
@@ -107,7 +107,8 @@ public class Mhy1(string dir) {
             Type = reader.ReadInt32(),
             PathName = reader.ReadStringToNull()
         }).Select(e => e.PathName.Split("/").Last()).ToList();
-        /*var refTypes =*/ reader.ReadList(_ => ReadType(reader, enableTypeTree, true));
+        if (version >= 20)
+            /*var refTypes =*/ reader.ReadList(_ => ReadType(reader, enableTypeTree, true, version));
         /*var userInformation =*/ reader.ReadStringToNull();
 
         var objects = info.ToDictionary(i => i.Key, i => ReadObject(i.Value, reader));
@@ -116,7 +117,7 @@ public class Mhy1(string dir) {
         return objects;
     }
     
-    private static SerializedType ReadType(ObjectReader reader, bool enableTypeTree, bool isRefType) {
+    private static SerializedType ReadType(ObjectReader reader, bool enableTypeTree, bool isRefType, int version) {
         var type = new SerializedType();
         type.ClassId = reader.ReadInt32();
         type.IsStrippedType = reader.ReadBoolean();
@@ -130,19 +131,21 @@ public class Mhy1(string dir) {
         /*var stringBufferSize =*/ reader.ReadInt32();
         type.Nodes = Range(0, numberOfNodes).Select(_ => new TypeTreeNode(reader.ReadUInt16(),
             reader.ReadByte(), reader.ReadByte(), reader.ReadUInt32(), reader.ReadUInt32(),
-            reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), reader.ReadUInt64() // >=19
+            reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32(), version>=19 ? reader.ReadUInt64() : 0
         )).ToList();
         foreach (var node in type.Nodes) {
             node.Type = ReadString(reader, node.TypeStrOffset);
             node.Name = ReadString(reader, node.NameStrOffset);
         }
 
-        if (isRefType) {
-            type.KlassName = reader.ReadStringToNull();
-            type.NameSpace = reader.ReadStringToNull();
-            type.AsmName = reader.ReadStringToNull();
-        } else {
-            type.TypeDependencies = reader.ReadArray(_ => reader.ReadInt32());
+        if (version >= 21) {
+            if (isRefType) {
+                type.KlassName = reader.ReadStringToNull();
+                type.NameSpace = reader.ReadStringToNull();
+                type.AsmName = reader.ReadStringToNull();
+            } else {
+                type.TypeDependencies = reader.ReadArray(_ => reader.ReadInt32());
+            }
         }
         return type;
         

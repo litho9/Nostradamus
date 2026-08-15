@@ -484,54 +484,49 @@ public class SerializedShaderState {
 }
 
 public class SerializedPass {
-        public Dictionary<string, int> NameIndices;
-        public int Type; // { Normal = 0, Use = 1, Grab = 2 }
-        public SerializedShaderState State;
-        public uint ProgramMask;
-        public List<SerializedSubProgram> ProgVertex;
-        public List<SerializedSubProgram> ProgFragment;
-        public List<SerializedSubProgram> ProgGeometry;
-        public List<SerializedSubProgram> ProgHull;
-        public List<SerializedSubProgram> ProgDomain;
-        public List<SerializedSubProgram> ProgRayTracing;
-        public bool HasInstancingVariant;
-        public string UseName;
-        public string Name;
-        public string TextureName;
-        public Dictionary<string, string> Tags;
+    public Dictionary<string, int> NameIndices;
+    public int Type; // { Normal = 0, Use = 1, Grab = 2 }
+    public SerializedShaderState State;
+    public uint ProgramMask;
+    public List<SerializedSubProgram> ProgVertex;
+    public List<SerializedSubProgram> ProgFragment;
+    public List<SerializedSubProgram> ProgGeometry;
+    public List<SerializedSubProgram> ProgHull;
+    public List<SerializedSubProgram> ProgDomain;
+    public List<SerializedSubProgram> ProgRayTracing;
+    public bool HasInstancingVariant;
+    public string UseName;
+    public string Name;
+    public string TextureName;
+    public Dictionary<string, string> Tags;
 
-        public SerializedPass(ObjectReader reader, byte[] oldTypeHash) {
-            NameIndices = Range(0, reader.ReadInt32())
-                .ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadInt32());
-            Type = reader.ReadInt32();
-            State = new SerializedShaderState(reader);
-            ProgramMask = reader.ReadUInt32();
-            ProgVertex = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
-            ProgFragment = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
-            ProgGeometry = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
-            ProgHull = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
-            ProgDomain = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
-            ProgRayTracing = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
-            HasInstancingVariant = reader.ReadBoolean();
-            var hasProceduralInstancingVariant = reader.ReadInt32() > 0;
-            UseName = reader.ReadAlignedString();
-            Name = reader.ReadAlignedString();
-            TextureName = reader.ReadAlignedString();
-            Tags = Range(0, reader.ReadInt32())
-                .ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadAlignedString());
-        }
+    public SerializedPass(ObjectReader reader, byte[] oldTypeHash) {
+        NameIndices = Range(0, reader.ReadInt32())
+            .ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadInt32());
+        Type = reader.ReadInt32();
+        State = new SerializedShaderState(reader);
+        ProgramMask = reader.ReadUInt32();
+        ProgVertex = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+        ProgFragment = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+        ProgGeometry = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+        ProgHull = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+        ProgDomain = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+        ProgRayTracing = reader.ReadList(_ => new SerializedSubProgram(reader, oldTypeHash));
+        HasInstancingVariant = reader.ReadBoolean();
+        var hasProceduralInstancingVariant = reader.ReadInt32() > 0;
+        UseName = reader.ReadAlignedString();
+        Name = reader.ReadAlignedString();
+        TextureName = reader.ReadAlignedString();
+        Tags = Range(0, reader.ReadInt32())
+            .ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadAlignedString());
     }
+}
 
 public class SerializedSubShader(ObjectReader reader, byte[] oldTypeHash) {
     public List<SerializedPass> Passes = reader.ReadList(_ => new SerializedPass(reader, oldTypeHash));
     public Dictionary<string, string> Tags = Range(0, reader.ReadInt32())
         .ToDictionary(_ => reader.ReadAlignedString(), _ => reader.ReadAlignedString());
     public int LOD = reader.ReadInt32();
-}
-
-public class SerializedShaderDependency(ObjectReader reader) {
-    public string From = reader.ReadAlignedString();
-    public string To = reader.ReadAlignedString();
 }
 
 public class Shader(ObjectReader reader, byte[] oldTypeHash) {
@@ -542,15 +537,16 @@ public class Shader(ObjectReader reader, byte[] oldTypeHash) {
     public string SerializedName = reader.ReadAlignedString();
     public string CustomEditorName = reader.ReadAlignedString();
     public string FallbackName = reader.ReadAlignedString();
-    public List<SerializedShaderDependency> SerializedDeps = reader.ReadList(_ => new SerializedShaderDependency(reader));
+    public List<(string, string)> DepsFromTo = reader.ReadList(() =>
+        (reader.ReadAlignedString(), reader.ReadAlignedString()));
     public bool DisableNoSubshadersMessage = reader.Align(reader.ReadBoolean);
 
-    public uint[] Platforms = reader.ReadArray(_ => reader.ReadUInt32());
-    public uint[][] Offsets = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
-    public uint[][] CompressedLengths = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
-    public uint[][] DecompressedLengths = reader.ReadArray(_ => reader.ReadArray(_ => reader.ReadUInt32()));
+    public uint[] Platforms = reader.ReadArray(reader.ReadUInt32);
+    public uint[][] Offsets = reader.ReadArray(() => reader.ReadArray(reader.ReadUInt32));
+    public uint[][] CompressedLengths = reader.ReadArray(_ => reader.ReadArray(reader.ReadUInt32));
+    public uint[][] DecompressedLengths = reader.ReadArray(_ => reader.ReadArray(reader.ReadUInt32));
     public byte[] CompressedBlob = reader.ReadBytes(reader.ReadInt32());
-    public PPtr<Shader>[] Dependencies = reader.ReadArray(_ => reader.ReadPointer<Shader>());
+    public PPtr<Shader>[] Dependencies = reader.ReadArray(reader.ReadPointer<Shader>);
     public Dictionary<string, PPtr<Texture>> NonModifiableTextures = Range(0, reader.ReadInt32())
         .ToDictionary(_=> reader.ReadAlignedString(), _ => reader.ReadPointer<Texture>());
     public bool ShaderIsBaked = reader.Align(reader.ReadBoolean);

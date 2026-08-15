@@ -9,5 +9,8 @@
         <Content Include=".\oodle.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+        <Content Include=".\AnimeStudio.Ooz.dll">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
     </ItemGroup>
 </Project>
