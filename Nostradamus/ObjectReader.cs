@@ -3,13 +3,6 @@ using System.Text;
 using static System.Linq.Enumerable;
 
 namespace Nostradamus;
-
-public record XForm(Vector3 Translate, Quaternion Rotate, Vector3 Scale) {
-    public override string ToString() => string.Join(" ",
-        Translate is { X: 0, Y: 0, Z: 0 } ? "⊕" : "",
-        Rotate is { W: 1, X: 0, Y: 0, Z: 0 } ? "↺" : "",
-        Scale is { X: 0, Y: 0, Z: 0 } ? "⇲" : "");
-};
     
 public class ObjectReader(Stream input) : BinaryReader(input) {
     public readonly List<PPtr0> Pointers = [];
@@ -39,6 +32,14 @@ public class ObjectReader(Stream input) : BinaryReader(input) {
     private IEnumerable<byte> BytesToNull(byte b = 0) { while ((b = ReadByte()) != 0) yield return b; }
     public string ReadStringToNull() => Encoding.UTF8.GetString(BytesToNull().ToArray());
     public string ReadAlignedString() => Align(() => Encoding.UTF8.GetString(ReadBytes(ReadInt32())));
+
+    public T Peek<T>(long offset, Func<T> fn) {
+        var pos = BaseStream.Position;
+        BaseStream.Position += offset;
+        var ret = fn();
+        BaseStream.Position = pos;
+        return ret;
+    }
 
     public T Align<T>(T ret, int alignment = 4) {
         var mod = BaseStream.Position % alignment;
@@ -84,6 +85,13 @@ public record GameObject(List<PPtr<object>> Components, int Layer, string Name) 
 
     public override string ToString() => $"GameObject('{Name}' l={Layer} Components=[{string.Join(",", Components)}])";
 }
+
+public record XForm(Vector3 Translate, Quaternion Rotate, Vector3 Scale) {
+    public override string ToString() => string.Join(" ",
+        Translate is { X: 0, Y: 0, Z: 0 } ? "⊕" : "",
+        Rotate is { W: 1, X: 0, Y: 0, Z: 0 } ? "↺" : "",
+        Scale is { X: 0, Y: 0, Z: 0 } ? "⇲" : "");
+};
 
 public record Transform(PPtr<GameObject> GameObject, XForm X, List<PPtr<Transform>> Children, PPtr<Transform> Father) {
     public static Transform Parse(ObjectReader r) {
