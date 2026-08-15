@@ -1,5 +1,4 @@
 ﻿using System.Buffers;
-using System.Buffers.Binary;
 using static System.Linq.Enumerable;
 using static Nostradamus.Descrambelhador;
 
@@ -15,8 +14,17 @@ public class Blb3 {
     private static readonly byte[] Blb3ShiftRow = [0x05, 0x0A, 0x03, 0x08, 0x0F, 0x02, 0x07, 0x09, 0x00, 0x06, 0x0E, 0x0B, 0x0C, 0x01, 0x04, 0x0D, 0x05, 0x0E, 0x08, 0x06, 0x01, 0x0C, 0x07, 0x09, 0x00, 0x0F, 0x03, 0x0B, 0x04, 0x0D, 0x02, 0x0A, 0x04, 0x0F, 0x0D, 0x05, 0x0C, 0x08, 0x02, 0x09, 0x0B, 0x01, 0x07, 0x03, 0x0A, 0x00, 0x06, 0x0E];
     private static readonly byte[] Blb3Key = [0xA9, 0x85, 0x57, 0x4D, 0x8B, 0xF9, 0x81, 0x33];
     private static readonly byte[] Blb3Mul = [0xC8, 0x73, 0xBF, 0x25, 0xD9, 0x9C, 0x7E, 0x6C];
-        
-    public static void ReadHeaders(ObjectReader reader) {
+
+    public static Dictionary<string, Dictionary<long, object>> LoadBlock(FileStream stream) {
+        Dictionary<string, Dictionary<long, object>> cabs = new();
+        var reader = new BinaryReader(stream);
+        while (stream.Position < stream.Length) {
+            Parse(reader, cabs);
+        }
+        return cabs;
+    }
+
+    public static void Parse(BinaryReader reader, Dictionary<string, Dictionary<long, object>> cabs) {
         if (!reader.ReadBytes(4).SequenceEqual([.. "Blb\x03"u8]))
             throw new Exception("File does not begin with 'Blb3'.");
         var infoSize = (int)reader.ReadUInt32();
@@ -27,10 +35,10 @@ public class Blb3 {
         
         using var r = new ObjectReader(new MemoryStream(compressedInfo));
         var size = r.ReadUInt32();
-        var lastUncompressedSize = r.ReadUInt32();
+        var lastUncompressedSize = (int)r.ReadUInt32();
         r.ReadBytes(12); // unknown 4, blobOffset, BlobSize
         /*var compressionType =*/ r.ReadByte();
-        var uncompressedSize = (uint)1 << r.Align(r.ReadByte()); // 2^byte
+        var uncompressedSize = (int)((uint)1 << r.Align(r.ReadByte())); // 2^byte
         var blocksInfoCount = r.ReadInt32();
         var nodesCount = r.ReadInt32();
         var blocksInfoOffset = r.BaseStream.Position + r.ReadInt64();
@@ -44,15 +52,16 @@ public class Blb3 {
             var compressedSize = blockOffset - offset;
             offset = blockOffset;
             var decompressedSize = i == blocksInfoCount - 1 ? lastUncompressedSize : uncompressedSize;
-            return new StorageBlock((int)compressedSize, (int)decompressedSize);
+            return new StorageBlock((int)compressedSize, decompressedSize);
         }).ToArray();
 
         r.BaseStream.Position = nodesInfoOffset;
-        var nodesInfo = Range(0, nodesCount).Select(_ => new DirInfo(
-            r.ReadInt32(), r.ReadInt32(), r.Peek(r.ReadInt64(), r.ReadStringToNull))).ToArray();
+        var nodesInfo = Range(0, nodesCount).Select(_ => {
+            int o = r.ReadInt32(), s = r.ReadInt32();
+            return new DirNode(r.Peek(r.ReadInt64()-8, r.ReadStringToNull), false, o, s);
+        }).ToArray();
         
-        Console.WriteLine(nodesInfo);
-        var blocksStream = new MemoryStream((blocksInfoCount-1) * (int)uncompressedSize + (int)lastUncompressedSize);
+        var blocksStream = new MemoryStream((blocksInfoCount-1) * uncompressedSize + lastUncompressedSize);
         foreach (var (compressedSize, decompressedSize) in blocksInfo) {
             Console.WriteLine($"compressedSize={compressedSize} decompressedSize={decompressedSize}.");
             var compressed = ArrayPool<byte>.Shared.Rent(compressedSize);
@@ -66,22 +75,12 @@ public class Blb3 {
         }
         var blocksReader = new ObjectReader(blocksStream);
         foreach (var node in nodesInfo.Where(node => !node.Path.EndsWith("resS"))) {
+            Console.WriteLine($"path='{node.Path}'");
             blocksStream.Position = node.Offset;
-            // cabs.Add(node.Path, ReadCab(blocksReader));
-            ReadCab(blocksReader);
+            cabs.Add(node.Path, Cab.ReadCab(blocksReader));
         }
     }
     
-    private static void ReadCab(ObjectReader reader) {
-        var metadataSize = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        var fileSize = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        var version = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4)); // 17
-        var dataOffset = BinaryPrimitives.ReadUInt32BigEndian(reader.ReadBytes(4));
-        var isBigEndian = reader.Align(reader.ReadBoolean);
-        var unityVersion = reader.ReadStringToNull();
-        var targetPlatform = reader.ReadInt32(); // 19 (StandaloneWindows64)
-    }
-
     private static void Decrypt(byte[] header, Span<byte> buffer) {
         buffer = buffer[..Math.Min(128, buffer.Length)];
         var count = Math.Min(buffer.Length, header.Length);
@@ -302,7 +301,4 @@ public class Blb3 {
             MixCol(state, 12);
         }
     }
-
-    private record DirInfo(long Offset, int Size, string Path);
-    internal record StorageBlock(int CompressedSize, int UncompressedSize);
 }
