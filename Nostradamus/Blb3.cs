@@ -62,8 +62,8 @@ public class Blb3 {
         }).ToArray();
         
         var blocksStream = new MemoryStream((blocksInfoCount-1) * uncompressedSize + lastUncompressedSize);
+        Console.WriteLine($"[blb3] {blocksInfo.Length} blocks.");
         foreach (var (compressedSize, decompressedSize) in blocksInfo) {
-            Console.WriteLine($"compressedSize={compressedSize} decompressedSize={decompressedSize}.");
             var compressed = ArrayPool<byte>.Shared.Rent(compressedSize);
             var decompressed = ArrayPool<byte>.Shared.Rent(decompressedSize);
             if (reader.Read(compressed, 0, compressedSize) == 0) throw new Exception("Readn't");
@@ -75,7 +75,7 @@ public class Blb3 {
         }
         var blocksReader = new ObjectReader(blocksStream);
         foreach (var node in nodesInfo.Where(node => !node.Path.EndsWith("resS"))) {
-            Console.WriteLine($"path='{node.Path}'");
+            Console.WriteLine($"[blb3] path='{node.Path}'");
             blocksStream.Position = node.Offset;
             cabs.Add(node.Path, Cab.ReadCab(blocksReader));
         }

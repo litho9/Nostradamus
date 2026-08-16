@@ -6,12 +6,17 @@ Console.WriteLine("** Nostradamus **");
 var watch = System.Diagnostics.Stopwatch.StartNew();
 var path0 = @"D:\games\HoYoPlay\games\Genshin Impact game\GenshinImpact_Data\StreamingAssets\AssetBundles\blocks\00\";
 
-var stream = File.Open(path0 + "00000890.blk", FileMode.Open, FileAccess.Read);
+var stream = File.Open(path0 + "00317038.blk", FileMode.Open, FileAccess.Read);
 var cabs = Blb3.LoadBlock(stream);
 Console.WriteLine($"blk processed in {watch.ElapsedMilliseconds}ms.");
-var cab0 = cabs["CAB-0aa2768ea164a0d7db932b50052974af"];
-var root = (Transform)cab0.Values.Single(o => o is Transform { Father.PathId: 0 });
-// PrintCab(root, cab0)
+// Console.WriteLine(cabs);
+// var cab0 = cabs["CAB-42ce11d755156caaa6bcb4120b32cc88"];
+// var root = (Transform)cab0.Values.Single(o => o is Transform { Father.PathId: 0 });
+// PrintCab(root);
+foreach (var (name, objs) in cabs) {
+    var root = objs[1];
+    Console.WriteLine($"[nstd] {name} {root}");
+}
 
 void runZ() {
     var path0 = Environment.GetEnvironmentVariable("GAME_PATH")!;
@@ -57,4 +62,15 @@ void PrintCab(Transform t, Mhy1 mhy1, string ident = "") {
     if (t.GameObject.Val!.Name == "Bip001") return;
     foreach (var c in t.Children)
         PrintCab(c.Val!, mhy1, ident: ident + "|");
+}
+
+T Point<T>(PPtr<T> pPtr) {
+    if (pPtr.Val == null) {
+        if (pPtr.ExtPath == null) return default; // TODO
+        // if (!_cabMap.ContainsKey(pPtr.ExtPath)) LoadCabMap();
+        // var blockName = _cabMap[pPtr.ExtPath];
+        // if (!Blocks.ContainsKey(blockName)) LoadBlock(blockName);
+        pPtr.Val = (T)cabs[pPtr.ExtPath][pPtr.PathId];
+    }
+    return (T)pPtr.Val!;
 }

@@ -93,7 +93,9 @@ public class MonoBehaviour(ObjectReader r) {
     public readonly PPtr<GameObject> GameObject = r.ReadPointer<GameObject>();
     public readonly bool Enabled = r.Align(r.ReadBoolean);
     public readonly PPtr<MonoScript> Script = r.ReadPointer<MonoScript>();
-    public readonly string Name = r.Align(() => Encoding.UTF8.GetString(r.ReadBytes(r.ReadInt32())));    
+    public readonly string Name = r.Align(() => Encoding.UTF8.GetString(r.ReadBytes(r.ReadInt32())));
+
+    public override string ToString() => $"\e[32m{Name}\e[0m";
 }
 
 public class MonoScript(ObjectReader reader) {
@@ -607,7 +609,7 @@ public class Texture2D : Texture {
         }
     }
 
-    public override string ToString() => $"{Name} [{Width}x{Height}][{Format}]";
+    public override string ToString() => $"\e[34m{Name} [{Width}x{Height}][{Format}]\e[0m";
 }
 
 public class UnityTexEnv(ObjectReader reader) {
@@ -725,4 +727,6 @@ public record AssetBundle(string Name, List<PPtr<object>> PreloadTable, List<Ass
         r.ReadList(_ => r.ReadPointer<object>()),
         r.ReadList(_ => new AssetInfo(r.ReadAlignedString(),
             r.ReadInt32(), r.ReadInt32(), r.ReadPointer<object>())));
+
+    public override string ToString() => $"\e[33m{Name} {string.Join(",", Container.Select(c => c.Asset.Val))}\e[0m";
 }

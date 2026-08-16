@@ -78,7 +78,7 @@ public class Cab {
     
     private static object ReadObject(ObjectInfo o, ObjectReader reader) {
         reader.BaseStream.Position = o.ByteStart;
-        Console.WriteLine($"Reading {o}");
+        Console.WriteLine($"\e[32m[cab] Reading Obj_{o.ByteStart}..{o.ByteSize}_{o.Type.ClassId}\e[0m");
         return o.Type.ClassId switch {
             1 => GameObject.Parse(reader),
             4 => Transform.Parse(reader),

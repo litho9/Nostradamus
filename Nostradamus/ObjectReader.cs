@@ -31,7 +31,12 @@ public class ObjectReader(Stream input) : BinaryReader(input) {
 
     private IEnumerable<byte> BytesToNull(byte b = 0) { while ((b = ReadByte()) != 0) yield return b; }
     public string ReadStringToNull() => Encoding.UTF8.GetString(BytesToNull().ToArray());
-    public string ReadAlignedString() => Align(() => Encoding.UTF8.GetString(ReadBytes(ReadInt32())));
+    public string ReadAlignedString() => Align(() => {
+        var s = ReadInt32();
+        return s < 0 || s + BaseStream.Position >= BaseStream.Length
+            ? $"ERR_INVALID_STRING_SIZE:{s}"
+            : Encoding.UTF8.GetString(ReadBytes(s));
+    });
 
     public T Peek<T>(long offset, Func<T> fn) {
         var pos = BaseStream.Position;
